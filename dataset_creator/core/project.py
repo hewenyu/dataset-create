@@ -98,7 +98,8 @@ class DatasetProject(BaseModel):
         project_file = self.directory / "project.json"
         with open(project_file, "w") as f:
             # Exclude tasks and directory from serialization
-            project_data = self.model_dump(exclude={"tasks", "directory"})
+            # Convert UUID to strings for JSON serialization
+            project_data = self.model_dump(exclude={"tasks", "directory"}, mode="json")
             json.dump(project_data, f, indent=2)
         
         # Save each task
@@ -108,7 +109,7 @@ class DatasetProject(BaseModel):
         for task_id, task in self.tasks.items():
             task_file = tasks_dir / f"{task_id}.json"
             with open(task_file, "w") as f:
-                json.dump(task.model_dump(), f, indent=2)
+                json.dump(task.model_dump(mode="json"), f, indent=2)
         
         return self.directory
     

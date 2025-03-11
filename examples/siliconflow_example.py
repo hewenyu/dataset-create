@@ -10,16 +10,17 @@ This script demonstrates how to use SiliconFlow API for:
 import os
 from pathlib import Path
 
-from dataset_creator import DatasetProject
-from dataset_creator.core import Dataset
+from dataset_creator import DatasetProject, Dataset
 from dataset_creator.data_gen import QuestionGenerator, DataGenerator
 from dataset_creator.data_gen.generator import GeneratorConfig
 from dataset_creator.data_gen.question_generator import QuestionGeneratorConfig
 from dataset_creator.fine_tune import ModelFineTuner
 from dataset_creator.fine_tune.fine_tuner import FineTuneConfig, FineTuneProvider
 
+
+tokens = os.getenv("SiliconflowToken")
 # Set your SiliconFlow API key
-SILICONFLOW_API_KEY = "your-siliconflow-api-key-here"
+SILICONFLOW_API_KEY = tokens
 # SiliconFlow API URL (default is https://api.siliconflow.cn/v1)
 SILICONFLOW_API_URL = "https://api.siliconflow.cn/v1"
 
@@ -40,14 +41,14 @@ task.thinking_instruction = (
 project_dir = project.save()
 print(f"项目保存到: {project_dir}")
 
-# 2. Generate questions from topics using SiliconFlow
-# Configure the question generator
+# 2. 使用 SiliconFlow 从主题生成问题
+# 配置问题生成器
 question_config = QuestionGeneratorConfig(
     siliconflow_api_url=SILICONFLOW_API_URL
 )
 
 question_gen = QuestionGenerator(
-    model="gpt-3.5-turbo",  # SiliconFlow 支持的模型
+    model="deepseek-ai/DeepSeek-V3",  # SiliconFlow 支持的模型
     provider="siliconflow",
     api_key=SILICONFLOW_API_KEY,
     config=question_config
@@ -71,7 +72,7 @@ gen_config = GeneratorConfig(
 
 # Create data generator
 data_generator = DataGenerator(
-    model="gpt-3.5-turbo",  # SiliconFlow 支持的模型
+    model="deepseek-ai/DeepSeek-R1",  # SiliconFlow 支持的模型
     provider="siliconflow",
     api_key=SILICONFLOW_API_KEY,
     config=gen_config
@@ -88,7 +89,7 @@ dataset = Dataset(
     name="问答数据集",
     description="通用问答数据集，包含思考链",
     task_id=task.id,
-    model_used="gpt-3.5-turbo",
+    model_used="deepseek-ai/DeepSeek-R1",
     provider="siliconflow"
 )
 
@@ -103,29 +104,29 @@ dataset.create_split("train", list(dataset.examples.keys()))
 dataset_dir = dataset.save()
 print(f"数据集保存到: {dataset_dir}")
 
-# 4. Fine-tune a model using SiliconFlow
-# Configure fine-tuning
-ft_config = FineTuneConfig(
-    provider=FineTuneProvider.SILICONFLOW,
-    epochs=3,
-    siliconflow_api_url=SILICONFLOW_API_URL
-)
+# # 4. Fine-tune a model using SiliconFlow
+# # Configure fine-tuning
+# ft_config = FineTuneConfig(
+#     provider=FineTuneProvider.SILICONFLOW,
+#     epochs=3,
+#     siliconflow_api_url=SILICONFLOW_API_URL
+# )
 
-# Create fine-tuner
-fine_tuner = ModelFineTuner(
-    api_key=SILICONFLOW_API_KEY,
-    config=ft_config
-)
+# # Create fine-tuner
+# fine_tuner = ModelFineTuner(
+#     api_key=SILICONFLOW_API_KEY,
+#     config=ft_config
+# )
 
-# Start fine-tuning
-job = fine_tuner.fine_tune(
-    dataset=dataset,
-    base_model="llama-3-8b",  # 假设SiliconFlow支持这个模型
-    output_name="my-qa-model"
-)
+# # Start fine-tuning
+# job = fine_tuner.fine_tune(
+#     dataset=dataset,
+#     base_model="llama-3-8b",  # 假设SiliconFlow支持这个模型
+#     output_name="my-qa-model"
+# )
 
-print(f"微调任务已启动，ID: {job.id}")
-print(f"状态: {job.status}")
+# print(f"微调任务已启动，ID: {job.id}")
+# print(f"状态: {job.status}")
 
-if job.error_message:
-    print(f"错误: {job.error_message}") 
+# if job.error_message:
+#     print(f"错误: {job.error_message}") 

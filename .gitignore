@@ -1,0 +1,34 @@
+**/.venv
+**/__pycache__
+**/.idea
+**/.vscode
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.pylint.d
+
+
+
+kiln_repo
+
+# python 
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+
+# egg
+*.egg
+*.egg-info
+
+# project dir
+**/projects
+
+
+
+*.log
+*.log.*
+*.log.*.*
+*.log.*.*.*
+*.log.*.*.*.*

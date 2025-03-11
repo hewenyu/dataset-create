@@ -198,7 +198,7 @@ class Dataset(BaseModel):
         dataset_file = self.directory / "dataset.json"
         with open(dataset_file, "w") as f:
             # Exclude examples, splits and directory from serialization
-            dataset_data = self.model_dump(exclude={"examples", "splits", "directory"})
+            dataset_data = self.model_dump(exclude={"examples", "splits", "directory"}, mode="json")
             json.dump(dataset_data, f, indent=2)
         
         # Save examples
@@ -208,7 +208,7 @@ class Dataset(BaseModel):
         for example_id, example in self.examples.items():
             example_file = examples_dir / f"{example_id}.json"
             with open(example_file, "w") as f:
-                json.dump(example.model_dump(), f, indent=2)
+                json.dump(example.model_dump(mode="json"), f, indent=2)
         
         # Save splits
         splits_dir = self.directory / "splits"
@@ -217,7 +217,7 @@ class Dataset(BaseModel):
         for split_name, split in self.splits.items():
             split_file = splits_dir / f"{split_name}.json"
             with open(split_file, "w") as f:
-                json.dump(split.model_dump(), f, indent=2)
+                json.dump(split.model_dump(mode="json"), f, indent=2)
         
         # Save the dataset in the specified format
         self._save_formatted(format)
