@@ -120,34 +120,37 @@ except Exception as e:
 
 # 3. Generate a dataset using OpenAI models in English
 logger.info("Configuring data generator")
-# Configure the data generator to use thinking
-gen_config = GeneratorConfig(
-    use_thinking=True,
+# Configure data generator
+data_config = GeneratorConfig(
+    use_thinking=True,  # Enable thinking chain generation
     temperature=0.7,
     max_tokens=1500,
-    language=Language.ENGLISH  # Specify English answers generation
+    language=Language.ENGLISH  # Specify English generation
 )
 
-# Create data generator
 logger.info("Initializing data generator")
 try:
     data_generator = DataGenerator(
-        model="gpt-4",  # Use OpenAI model
+        model="gpt-4",  # Use GPT-4 model
         provider="openai",
         api_key=api_key,
-        config=gen_config
+        config=data_config
     )
     logger.info("Data generator initialized successfully")
 except Exception as e:
     logger.error(f"Error initializing data generator: {str(e)}", exc_info=True)
     sys.exit(f"Failed to initialize data generator: {str(e)}")
 
-# Generate examples
-logger.info(f"Starting to generate English dataset with {len(questions)} questions")
+# Define max examples to generate
+max_examples = 5  # Limit the maximum number of examples to 5
+logger.info(f"Setting maximum number of examples to generate: {max_examples}")
+
+logger.info("Starting dataset generation")
 try:
     examples = data_generator.generate_dataset(
         task=task,
-        questions=questions
+        questions=questions,
+        max_examples=max_examples  # Add maximum examples limit
     )
     logger.info(f"Successfully generated {len(examples)} English examples")
 except Exception as e:

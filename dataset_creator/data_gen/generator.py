@@ -86,7 +86,8 @@ class DataGenerator:
     def generate_dataset(
         self, 
         task: Task,
-        questions: List[str]
+        questions: List[str],
+        max_examples: Optional[int] = None
     ) -> List[DatasetExample]:
         """
         Generate a dataset by creating examples for each question.
@@ -94,12 +95,21 @@ class DataGenerator:
         Args:
             task: The task to generate examples for
             questions: List of questions to generate examples for
+            max_examples: Maximum number of examples to generate (None for no limit)
             
         Returns:
             List of generated examples
         """
         logger.info(f"开始为任务 '{task.name}' 生成数据集, 包含 {len(questions)} 个问题, 语言: {task.language.value}")
         examples = []
+        
+        # 如果指定了最大示例数，确保不超过问题列表长度
+        if max_examples is not None:
+            logger.info(f"设置生成示例数量上限: {max_examples}")
+            actual_questions = questions[:max_examples]
+            if len(actual_questions) < len(questions):
+                logger.info(f"由于设置了上限 {max_examples}，从 {len(questions)} 个问题中选取了 {len(actual_questions)} 个")
+                questions = actual_questions
         
         # Generate system prompt
         system_prompt = task.format_system_prompt()
@@ -118,6 +128,11 @@ class DataGenerator:
                 )
                 logger.info(f"成功生成示例，用时 {time.time() - start_time:.2f}秒")
                 examples.append(example)
+                
+                # 检查是否已达到最大示例数
+                if max_examples is not None and len(examples) >= max_examples:
+                    logger.info(f"已达到最大示例数量 {max_examples}，停止生成")
+                    break
             except Exception as e:
                 logger.error(f"为问题 '{question[:50]}...' 生成示例时出错: {str(e)}", exc_info=True)
         

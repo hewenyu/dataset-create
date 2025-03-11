@@ -129,35 +129,37 @@ except Exception as e:
 
 # 3. Generate a dataset using SiliconFlow models in Chinese
 logger.info("配置数据生成器")
-# Configure the data generator to use thinking
-gen_config = GeneratorConfig(
-    use_thinking=True,
-    siliconflow_api_url=SILICONFLOW_API_URL,
-    temperature=0.7,  # 调整温度
-    max_tokens=1500,  # 减少最大token数以加快响应
-    language=Language.CHINESE  # 指定生成中文回答
+# Configure data generator
+data_config = GeneratorConfig(
+    use_thinking=True,  # 启用思考链生成
+    temperature=0.7,
+    max_tokens=1500,
+    language=Language.CHINESE  # 指定中文生成
 )
 
-# Create data generator
 logger.info("初始化数据生成器")
 try:
     data_generator = DataGenerator(
-        model="deepseek-ai/DeepSeek-R1",  # SiliconFlow 支持的模型
+        model="deepseek-ai/DeepSeek-R1",  # 使用DeepSeek模型
         provider="siliconflow",
         api_key=SILICONFLOW_API_KEY,
-        config=gen_config
+        config=data_config
     )
     logger.info("数据生成器初始化成功")
 except Exception as e:
     logger.error(f"初始化数据生成器时出错: {str(e)}", exc_info=True)
     sys.exit(f"初始化数据生成器失败: {str(e)}")
 
-# Generate examples
-logger.info(f"开始生成中文数据集，使用 {len(questions)} 个问题")
+# Define max examples to generate
+max_examples = 1  # 限制最大生成数量为1个示例
+logger.info(f"设置最大生成示例数量: {max_examples}")
+
+logger.info("开始生成数据集")
 try:
     examples = data_generator.generate_dataset(
         task=task,
-        questions=questions
+        questions=questions,
+        max_examples=max_examples  # 添加最大示例数量限制
     )
     logger.info(f"成功生成 {len(examples)} 个中文示例")
 except Exception as e:

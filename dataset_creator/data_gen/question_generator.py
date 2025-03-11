@@ -109,6 +109,11 @@ class QuestionGenerator:
         
         # Generate questions for each topic
         for topic in tqdm(topics, desc="Generating questions by topic"):
+            # 检查是否已达到目标问题数量
+            if num_questions and len(all_questions) >= num_questions:
+                logger.info(f"已达到目标问题数量 {num_questions}，停止生成")
+                break
+                
             logger.info(f"处理主题: '{topic}'")
             
             try:
@@ -119,22 +124,61 @@ class QuestionGenerator:
                 logger.info(f"成功生成 {len(subtopics)} 个子主题，用时 {time.time() - start_time:.2f}秒")
                 logger.info(f"子主题列表: {subtopics}")
                 
+                # 计算还需要多少问题才能达到目标数量
+                remaining_questions = num_questions - len(all_questions) if num_questions else None
+                
                 # Generate questions for the main topic
                 logger.info(f"为主题 '{topic}' 生成问题")
                 start_time = time.time()
+                # 如果设置了总数量限制，调整当前主题的问题数量
+                current_topic_questions = min(questions_per_topic, remaining_questions) if remaining_questions else questions_per_topic
+                if current_topic_questions <= 0:
+                    logger.info(f"已达到目标问题数量，跳过主题 '{topic}'")
+                    break
+                    
                 topic_questions = self.generate_questions_for_topic(
-                    topic, questions_per_topic, language
+                    topic, current_topic_questions, language
                 )
                 logger.info(f"成功为主题 '{topic}' 生成 {len(topic_questions)} 个问题，用时 {time.time() - start_time:.2f}秒")
                 all_questions.extend(topic_questions)
                 
+                # 再次检查是否已达到目标问题数量
+                if num_questions and len(all_questions) >= num_questions:
+                    logger.info(f"已达到目标问题数量 {num_questions}，停止生成子主题问题")
+                    break
+                
+                # 更新剩余问题数量
+                remaining_questions = num_questions - len(all_questions) if num_questions else None
+                if remaining_questions and remaining_questions <= 0:
+                    break
+                
                 # Generate questions for each subtopic
                 for subtopic in subtopics:
+                    # 检查是否已达到目标问题数量
+                    if num_questions and len(all_questions) >= num_questions:
+                        logger.info(f"已达到目标问题数量 {num_questions}，停止生成")
+                        break
+                        
+                    # 更新剩余问题数量
+                    remaining_questions = num_questions - len(all_questions) if num_questions else None
+                    if remaining_questions and remaining_questions <= 0:
+                        break
+                        
                     logger.info(f"为子主题 '{subtopic}' 生成问题")
                     start_time = time.time()
+                    
+                    # 调整子主题的问题数量
+                    subtopic_questions_count = questions_per_topic // subtopics_per_topic
+                    if remaining_questions:
+                        subtopic_questions_count = min(subtopic_questions_count, remaining_questions)
+                    
+                    if subtopic_questions_count <= 0:
+                        logger.info(f"已达到目标问题数量，跳过子主题 '{subtopic}'")
+                        continue
+                        
                     subtopic_questions = self.generate_questions_for_topic(
                         f"{topic} - {subtopic}", 
-                        questions_per_topic // subtopics_per_topic,
+                        subtopic_questions_count,
                         language
                     )
                     logger.info(f"成功为子主题 '{subtopic}' 生成 {len(subtopic_questions)} 个问题，用时 {time.time() - start_time:.2f}秒")
