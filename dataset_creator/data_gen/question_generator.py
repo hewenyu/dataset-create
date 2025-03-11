@@ -18,6 +18,7 @@ from dataset_creator.data_gen.generator import Language
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("QuestionGenerator")
 
+TimeOut = 120
 
 class QuestionGeneratorConfig(BaseModel):
     """Configuration for question generation"""
@@ -234,7 +235,7 @@ Return only the list of subtopics, one per line."""
                         endpoint,
                         headers=self.siliconflow_headers,
                         json=request_data,
-                        timeout=120  # 增加超时时间到120秒
+                        timeout=TimeOut  # 增加超时时间到120秒
                     )
                     logger.info(f"API 响应状态码: {response.status_code}, 用时: {time.time() - start_time:.2f}秒")
                     
@@ -370,7 +371,7 @@ Return only the list of questions, one per line, without numbering."""
                         endpoint,
                         headers=self.siliconflow_headers,
                         json=request_data,
-                        timeout=120  # 增加超时时间到120秒
+                        timeout=TimeOut  # 增加超时时间到120秒
                     )
                     logger.info(f"API 响应状态码: {response.status_code}, 用时: {time.time() - start_time:.2f}秒")
                     

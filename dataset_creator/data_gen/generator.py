@@ -17,6 +17,7 @@ from dataset_creator.core import DatasetExample, Task
 
 # 配置日志记录
 logger = logging.getLogger("DataGenerator")
+TimeOut = 120
 
 
 class Language(str, Enum):
@@ -271,7 +272,7 @@ class DataGenerator:
                         "Content-Type": "application/json"
                     },
                     json=request_data,
-                    timeout=120  # 增加超时时间到120秒
+                    timeout=TimeOut  # 增加超时时间到120秒
                 )
                 duration = time.time() - start_time
                 logger.info(f"API 响应状态码: {response.status_code}, 用时: {duration:.2f}秒")
@@ -388,7 +389,7 @@ class DataGenerator:
                         "Content-Type": "application/json"
                     },
                     json=request_data,
-                    timeout=120  # 增加超时时间到120秒
+                    timeout=TimeOut  # 增加超时时间到120秒
                 )
                 duration = time.time() - start_time
                 logger.info(f"API 响应状态码: {response.status_code}, 用时: {duration:.2f}秒")
