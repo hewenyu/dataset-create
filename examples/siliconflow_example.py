@@ -198,22 +198,6 @@ except Exception as e:
     logger.error(f"保存数据集时出错: {str(e)}", exc_info=True)
     print(f"保存数据集失败: {str(e)}")
 
-# 保存一个英文版本的示例代码（可选）
-logger.info("创建英文项目和任务示例")
-english_project = DatasetProject(name="qa-project-siliconflow-english", language=Language.ENGLISH)
-english_task = english_project.create_task(
-    name="general-qa-english",
-    instruction="Answer the given questions accurately and concisely",
-    description="General QA task in English"
-)
-
-english_task.thinking_instruction = (
-    "Think through this question step by step. Consider different aspects and approaches, then provide your final answer."
-)
-
-logger.info(f"英文项目语言: {english_project.language.value}")
-logger.info(f"英文任务语言: {english_task.language.value}")
-
 logger.info("SiliconFlow示例脚本执行完成")
 
 # # 4. Fine-tune a model using SiliconFlow
