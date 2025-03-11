@@ -63,4 +63,4 @@ def save_jsonl(data: List[Dict[str, Any]], file_path: Union[str, Path]) -> None:
     
     with open(file_path, "w", encoding="utf-8") as f:
         for item in data:
-            f.write(json.dumps(item) + "\n") 
+            f.write(json.dumps(item, ensure_ascii=False) + "\n") 

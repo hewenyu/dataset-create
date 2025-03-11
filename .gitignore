@@ -25,7 +25,9 @@ kiln_repo
 # project dir
 **/projects
 
+**/datasets
 
+**/data
 
 *.log
 *.log.*

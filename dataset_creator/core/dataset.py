@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer
 
-from .task import Language
+from .common import Language
 
 
 class DatasetFormat(str, Enum):
@@ -199,10 +199,10 @@ class Dataset(BaseModel):
         
         # Save dataset metadata
         dataset_file = self.directory / "dataset.json"
-        with open(dataset_file, "w") as f:
+        with open(dataset_file, "w", encoding="utf-8") as f:
             # Exclude examples, splits and directory from serialization
             dataset_data = self.model_dump(exclude={"examples", "splits", "directory"}, mode="json")
-            json.dump(dataset_data, f, indent=2)
+            json.dump(dataset_data, f, indent=2, ensure_ascii=False)
         
         # Save examples
         examples_dir = self.directory / "examples"
@@ -210,8 +210,8 @@ class Dataset(BaseModel):
         
         for example_id, example in self.examples.items():
             example_file = examples_dir / f"{example_id}.json"
-            with open(example_file, "w") as f:
-                json.dump(example.model_dump(mode="json"), f, indent=2)
+            with open(example_file, "w", encoding="utf-8") as f:
+                json.dump(example.model_dump(mode="json"), f, indent=2, ensure_ascii=False)
         
         # Save splits
         splits_dir = self.directory / "splits"
@@ -219,8 +219,8 @@ class Dataset(BaseModel):
         
         for split_name, split in self.splits.items():
             split_file = splits_dir / f"{split_name}.json"
-            with open(split_file, "w") as f:
-                json.dump(split.model_dump(mode="json"), f, indent=2)
+            with open(split_file, "w", encoding="utf-8") as f:
+                json.dump(split.model_dump(mode="json"), f, indent=2, ensure_ascii=False)
         
         # Save the dataset in the specified format
         self._save_formatted(format)
@@ -263,7 +263,7 @@ class Dataset(BaseModel):
         exports_dir = self.directory / "exports"
         formatted_file = exports_dir / f"{split_name}_{format.value}.jsonl"
         
-        with open(formatted_file, "w") as f:
+        with open(formatted_file, "w", encoding="utf-8") as f:
             for example_id in example_ids:
                 example = self.examples.get(example_id)
                 if example:
@@ -274,7 +274,7 @@ class Dataset(BaseModel):
                     else:  # Custom format - use the raw example
                         formatted = example.model_dump()
                     
-                    f.write(json.dumps(formatted) + "\n")
+                    f.write(json.dumps(formatted, ensure_ascii=False) + "\n")
     
     @classmethod
     def load(cls, directory: Union[str, Path]) -> "Dataset":
@@ -292,7 +292,7 @@ class Dataset(BaseModel):
         
         # Load dataset metadata
         dataset_file = directory / "dataset.json"
-        with open(dataset_file, "r") as f:
+        with open(dataset_file, "r", encoding="utf-8") as f:
             dataset_data = json.load(f)
         
         # Create dataset instance
@@ -302,7 +302,7 @@ class Dataset(BaseModel):
         examples_dir = directory / "examples"
         if examples_dir.exists():
             for example_file in examples_dir.glob("*.json"):
-                with open(example_file, "r") as f:
+                with open(example_file, "r", encoding="utf-8") as f:
                     example_data = json.load(f)
                     example = DatasetExample(**example_data)
                     dataset.examples[example.id] = example
@@ -311,7 +311,7 @@ class Dataset(BaseModel):
         splits_dir = directory / "splits"
         if splits_dir.exists():
             for split_file in splits_dir.glob("*.json"):
-                with open(split_file, "r") as f:
+                with open(split_file, "r", encoding="utf-8") as f:
                     split_data = json.load(f)
                     split = DatasetSplit(**split_data)
                     dataset.splits[split.name] = split

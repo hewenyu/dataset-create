@@ -120,7 +120,7 @@ dataset-creator create-project --name "chinese-project" --language chinese
 # Create a task with specific language
 dataset-creator create-task --project-dir "./projects/my-project" --name "chinese-task" --instruction "用中文回答问题" --language chinese
 ```
-
+![example](doc/png/example.png)
 ## Features
 
 - Simple, easy-to-use API for dataset generation

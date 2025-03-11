@@ -14,16 +14,11 @@ from pydantic import BaseModel
 from tqdm import tqdm
 
 from dataset_creator.core import DatasetExample, Task
+from dataset_creator.core.common import Language
 
 # 配置日志记录
 logger = logging.getLogger("DataGenerator")
-TimeOut = 120
-
-
-class Language(str, Enum):
-    """Language for dataset generation"""
-    ENGLISH = "english"
-    CHINESE = "chinese"
+TimeOut = 360
 
 
 class GeneratorConfig(BaseModel):
@@ -153,27 +148,28 @@ class DataGenerator:
         
         # Generate thinking if enabled
         thinking = None
+        answer = None
         if thinking_instruction:
             logger.info("启用了思考链生成")
             start_time = time.time()
-            thinking = self.generate_thinking(
+            thinking,answer = self.generate_thinking_and_answer(
                 question=question,
                 system_prompt=system_prompt,
                 thinking_instruction=thinking_instruction,
                 language=language
             )
-            logger.info(f"成功生成思考链，用时 {time.time() - start_time:.2f}秒, 长度: {len(thinking if thinking else '') } 字符")
+            logger.info(f"成功生成思考链，用时 {time.time() - start_time:.2f}秒, 长度: {len(thinking if thinking else '') + len(answer if answer else '')   } 字符")
         
-        # Generate answer
-        logger.info("生成回答")
-        start_time = time.time()
-        answer = self.generate_answer(
-            question=question,
-            system_prompt=system_prompt,
-            thinking=thinking,
-            language=language
-        )
-        logger.info(f"成功生成回答，用时 {time.time() - start_time:.2f}秒, 长度: {len(answer)} 字符")
+        else:
+            # Generate answer
+            logger.info("生成回答")
+            start_time = time.time()
+            answer = self.generate_answer(
+                question=question,
+                system_prompt=system_prompt,
+                language=language
+            )
+            logger.info(f"成功生成回答，用时 {time.time() - start_time:.2f}秒, 长度: {len(answer)} 字符")
         
         # Create and return the example
         return DatasetExample(
@@ -191,7 +187,7 @@ class DataGenerator:
             }
         )
     
-    def generate_thinking(
+    def generate_thinking_and_answer(
         self, 
         question: str, 
         system_prompt: str, 
@@ -238,7 +234,8 @@ class DataGenerator:
                 # Combine system prompts
                 thinking_system_prompt = (
                     self.config.thinking_system_prompt or 
-                    "You are a thoughtful assistant that thinks through problems step by step."
+                    ("你是一个会逐步思考问题的助手。" if language == Language.CHINESE else
+                     "You are a thoughtful assistant that thinks through problems step by step.")
                 )
                 combined_system_prompt = f"{thinking_system_prompt}\n{system_prompt}\n{language_instruction}"
                 
@@ -249,10 +246,16 @@ class DataGenerator:
                 
                 logger.info(f"调用 SiliconFlow API: {endpoint}")
                 
-                messages = [
-                    {"role": "system", "content": combined_system_prompt},
-                    {"role": "user", "content": f"{thinking_instruction}\n\nQuestion: {question}"}
-                ]
+                if language == Language.CHINESE:
+                    messages = [
+                        {"role": "system", "content": combined_system_prompt},
+                        {"role": "user", "content": f"{thinking_instruction}\n\n问题: {question}"}
+                    ]
+                else:  # Default to English
+                    messages = [
+                        {"role": "system", "content": combined_system_prompt}, 
+                        {"role": "user", "content": f"{thinking_instruction}\n\nQuestion: {question}"}
+                    ]
                 
                 request_data = {
                     "model": self.model,
@@ -262,7 +265,7 @@ class DataGenerator:
                     "top_p": self.config.top_p
                 }
                 
-                logger.info(f"请求数据: {json.dumps(request_data)[:200]}...")
+                logger.info(f"请求数据: {json.dumps(request_data, ensure_ascii=False)[:200]}...")
                 
                 start_time = time.time()
                 response = requests.post(
@@ -285,10 +288,11 @@ class DataGenerator:
                 if "choices" not in result or len(result["choices"]) == 0:
                     logger.error(f"API响应缺少choices字段: {result}")
                     raise Exception(f"Invalid API response: missing 'choices' field")
-                
-                thinking = result["choices"][0]["message"]["content"]
+                # 思考链和回答
+                answer = result["choices"][0]["message"]["content"] 
+                thinking = result['choices'][0]['message']['reasoning_content']
                 logger.info(f"思考链生成成功，长度: {len(thinking)} 字符")
-                return thinking
+                return thinking, answer
             except Exception as e:
                 logger.error(f"生成思考链时出错: {str(e)}", exc_info=True)
                 raise
@@ -379,7 +383,7 @@ class DataGenerator:
                     "top_p": self.config.top_p
                 }
                 
-                logger.info(f"请求数据: {json.dumps(request_data)[:200]}...")
+                logger.info(f"请求数据: {json.dumps(request_data, ensure_ascii=False)[:200]}...")
                 
                 start_time = time.time()
                 response = requests.post(

@@ -11,7 +11,7 @@ import openai
 from pydantic import BaseModel
 from tqdm import tqdm
 
-from dataset_creator.data_gen.generator import Language
+from dataset_creator.core.common import Language
 
 
 # 配置日志记录

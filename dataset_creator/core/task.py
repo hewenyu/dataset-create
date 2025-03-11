@@ -4,19 +4,13 @@ Task module defines the Task class representing a specific AI task.
 
 import json
 from datetime import datetime
-from enum import Enum
 from typing import Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
+from .common import Language
 from .dataset import Dataset
-
-
-class Language(str, Enum):
-    """Language for task and dataset generation"""
-    ENGLISH = "english"
-    CHINESE = "chinese"
 
 
 class Task(BaseModel):
@@ -45,10 +39,16 @@ class Task(BaseModel):
     def set_default_system_prompt(self) -> 'Task':
         """Set default system prompt if not provided"""
         if not self.system_prompt_template:
-            self.system_prompt_template = (
-                "You are a helpful assistant that follows instructions carefully. "
-                "Your task is to: {instruction}"
-            )
+            if self.language == Language.ENGLISH:
+                self.system_prompt_template = (
+                    "You are a helpful assistant that follows instructions carefully. "
+                    "Your task is to: {instruction}"
+                )
+            else:  # Chinese
+                self.system_prompt_template = (
+                    "你是一个认真遵循指令的助手。"
+                    "你的任务是：{instruction}"
+                )
         return self
     
     def create_dataset(

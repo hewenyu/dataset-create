@@ -118,6 +118,10 @@ dataset-creator create-project --name "中文项目" --language chinese
 dataset-creator create-task --project-dir "./projects/my-project" --name "中文任务" --instruction "用中文回答问题" --language chinese
 ```
 
+<!-- doc/png/example.png -->
+![example](doc/png/example.png)
+
+
 ## 功能特点
 
 - 简单易用的数据集生成API

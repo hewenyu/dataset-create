@@ -100,14 +100,14 @@ except Exception as e:
     sys.exit(f"初始化问题生成器失败: {str(e)}")
 
 # 定义要生成问题的主题
-topics = ["科学", "历史", "技术"]
-num_questions = 15
+topics = ["科学"]
+num_questions = 1
 logger.info(f"开始为主题 {topics} 生成 {num_questions} 个中文问题")
 
 try:
     # 单独尝试生成第一个主题的子主题
     logger.info(f"尝试为第一个主题 '{topics[0]}' 生成子主题")
-    subtopics = question_gen.generate_subtopics(topics[0], 3)
+    subtopics = question_gen.generate_subtopics(topics[0], 1)
     logger.info(f"成功生成子主题: {subtopics}")
 
     # 在主题循环中使用较小的子主题数和问题数
@@ -115,7 +115,7 @@ try:
     questions = question_gen.generate_from_topics(
         topics=topics,
         num_questions=num_questions,  # 总共生成15个问题
-        subtopics_per_topic=2  # 减少子主题数量以加快生成
+        subtopics_per_topic=1  # 减少子主题数量以加快生成
     )
     
     logger.info(f"成功生成 {len(questions)} 个中文问题")
@@ -197,48 +197,3 @@ try:
 except Exception as e:
     logger.error(f"保存数据集时出错: {str(e)}", exc_info=True)
     print(f"保存数据集失败: {str(e)}")
-
-# 保存一个英文版本的示例代码（可选）
-logger.info("创建英文项目和任务示例")
-english_project = DatasetProject(name="qa-project-siliconflow-english", language=Language.ENGLISH)
-english_task = english_project.create_task(
-    name="general-qa-english",
-    instruction="Answer the given questions accurately and concisely",
-    description="General QA task in English"
-)
-
-english_task.thinking_instruction = (
-    "Think through this question step by step. Consider different aspects and approaches, then provide your final answer."
-)
-
-logger.info(f"英文项目语言: {english_project.language.value}")
-logger.info(f"英文任务语言: {english_task.language.value}")
-
-logger.info("SiliconFlow示例脚本执行完成")
-
-# # 4. Fine-tune a model using SiliconFlow
-# # Configure fine-tuning
-# ft_config = FineTuneConfig(
-#     provider=FineTuneProvider.SILICONFLOW,
-#     epochs=3,
-#     siliconflow_api_url=SILICONFLOW_API_URL
-# )
-
-# # Create fine-tuner
-# fine_tuner = ModelFineTuner(
-#     api_key=SILICONFLOW_API_KEY,
-#     config=ft_config
-# )
-
-# # Start fine-tuning
-# job = fine_tuner.fine_tune(
-#     dataset=dataset,
-#     base_model="llama-3-8b",  # 假设SiliconFlow支持这个模型
-#     output_name="my-qa-model"
-# )
-
-# print(f"微调任务已启动，ID: {job.id}")
-# print(f"状态: {job.status}")
-
-# if job.error_message:
-#     print(f"错误: {job.error_message}") 

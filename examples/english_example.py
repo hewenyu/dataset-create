@@ -13,9 +13,9 @@ import sys
 from pathlib import Path
 
 from dataset_creator import DatasetProject, Dataset
-from dataset_creator.core.task import Language
+from dataset_creator.core.common import Language
 from dataset_creator.data_gen import QuestionGenerator, DataGenerator
-from dataset_creator.data_gen.generator import GeneratorConfig, Language
+from dataset_creator.data_gen.generator import GeneratorConfig
 from dataset_creator.data_gen.question_generator import QuestionGeneratorConfig
 from dataset_creator.fine_tune import ModelFineTuner
 from dataset_creator.fine_tune.fine_tuner import FineTuneConfig, FineTuneProvider
@@ -26,7 +26,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("english_example.log")
+        logging.FileHandler("english_example.log", encoding='utf-8')
     ]
 )
 logger = logging.getLogger("english_example")

@@ -1,5 +1,5 @@
 """
-Project module defines the DatasetProject class which manages tasks and datasets
+Project module defines the DatasetProject class which is the top-level container.
 """
 
 import json
@@ -11,7 +11,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer
 
-from .task import Task, Language
+from .common import Language
+from .task import Task
 
 
 class DatasetProject(BaseModel):
@@ -105,11 +106,11 @@ class DatasetProject(BaseModel):
         
         # Save project metadata
         project_file = self.directory / "project.json"
-        with open(project_file, "w") as f:
+        with open(project_file, "w", encoding="utf-8") as f:
             # Exclude tasks and directory from serialization
             # Convert UUID to strings for JSON serialization
             project_data = self.model_dump(exclude={"tasks", "directory"}, mode="json")
-            json.dump(project_data, f, indent=2)
+            json.dump(project_data, f, indent=2, ensure_ascii=False)
         
         # Save each task
         tasks_dir = self.directory / "tasks"
@@ -117,8 +118,8 @@ class DatasetProject(BaseModel):
         
         for task_id, task in self.tasks.items():
             task_file = tasks_dir / f"{task_id}.json"
-            with open(task_file, "w") as f:
-                json.dump(task.model_dump(mode="json"), f, indent=2)
+            with open(task_file, "w", encoding="utf-8") as f:
+                json.dump(task.model_dump(mode="json"), f, indent=2, ensure_ascii=False)
         
         return self.directory
     
@@ -138,7 +139,7 @@ class DatasetProject(BaseModel):
         
         # Load project metadata
         project_file = directory / "project.json"
-        with open(project_file, "r") as f:
+        with open(project_file, "r", encoding="utf-8") as f:
             project_data = json.load(f)
         
         # Create project instance
@@ -148,7 +149,7 @@ class DatasetProject(BaseModel):
         tasks_dir = directory / "tasks"
         if tasks_dir.exists():
             for task_file in tasks_dir.glob("*.json"):
-                with open(task_file, "r") as f:
+                with open(task_file, "r", encoding="utf-8") as f:
                     task_data = json.load(f)
                     task = Task(**task_data)
                     project.tasks[task.id] = task
