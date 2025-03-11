@@ -91,7 +91,9 @@ logger.info("配置问题生成器")
 question_config = QuestionGeneratorConfig(
     temperature=0.8,
     max_tokens=1500,
-    questions_per_topic=40,  # 每个主题生成更多问题，以达到总数200个
+    questions_per_topic=10,      # 每个主题生成10个问题
+    questions_per_subtopic=5,    # 每个子主题生成5个问题
+    max_total_questions=200,     # 设置最大总问题数量为200
     language=language
 )
 
@@ -121,15 +123,15 @@ topics = [
     "安慰和情绪支持",
     "日常生活分享和互动"
 ]
-num_questions = 200  # 设置目标问题数量为200
-logger.info(f"开始为以下主题生成问题: {topics}, 目标数量: {num_questions}")
+max_total_questions = 200  # 设置最大总问题数量为200
+logger.info(f"开始为以下主题生成问题: {topics}, 最大数量: {max_total_questions}")
 
 try:
     questions = question_gen.generate_from_topics(
         topics=topics,
-        num_questions=num_questions,
-        subtopics_per_topic=3,  # 每个主题3个子主题
-        language=language
+        subtopics_per_topic=4,             # 每个主题生成4个子主题
+        questions_per_subtopic=5,          # 每个子主题生成5个问题
+        max_total_questions=max_total_questions  # 限制总问题数为200个
     )
     logger.info(f"成功生成 {len(questions)} 个问题")
     for i, q in enumerate(questions[:10]):  # 只记录前10个问题，避免日志过长

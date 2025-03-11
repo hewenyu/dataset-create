@@ -74,7 +74,10 @@ logger.info("Configuring question generator")
 question_config = QuestionGeneratorConfig(
     temperature=0.7,
     max_tokens=1500,
-    language=Language.ENGLISH  # Specify English questions generation
+    language=Language.ENGLISH,  # Specify English questions generation
+    questions_per_topic=5,      # Questions for main topics
+    questions_per_subtopic=3,   # Questions for each subtopic
+    max_total_questions=15      # Maximum total questions to generate
 )
 
 logger.info("Initializing question generator")
@@ -92,8 +95,8 @@ except Exception as e:
 
 # Define topics for question generation
 topics = ["Science", "History", "Technology"]
-num_questions = 15
-logger.info(f"Starting to generate {num_questions} English questions for topics {topics}")
+max_total_questions = 15
+logger.info(f"Starting to generate English questions for topics {topics} (max: {max_total_questions})")
 
 try:
     # Try to generate subtopics for the first topic
@@ -105,8 +108,9 @@ try:
     logger.info("Now starting the complete question generation process")
     questions = question_gen.generate_from_topics(
         topics=topics,
-        num_questions=num_questions,
-        subtopics_per_topic=2  # Reduce number of subtopics to speed up generation
+        subtopics_per_topic=2,             # Generate 2 subtopics per topic
+        questions_per_subtopic=3,          # Generate 3 questions per subtopic
+        max_total_questions=max_total_questions  # Limit total to 15 questions
     )
     
     logger.info(f"Successfully generated {len(questions)} English questions")

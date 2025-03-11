@@ -80,10 +80,12 @@ except Exception as e:
 logger.info("配置问题生成器")
 # 配置问题生成器
 question_config = QuestionGeneratorConfig(
-    siliconflow_api_url=SILICONFLOW_API_URL,
-    temperature=0.7,  # 调整温度以减少生成的随机性
-    max_tokens=1500,  # 减少最大token数以加快响应
-    language=Language.CHINESE  # 指定生成中文问题
+    temperature=0.7,
+    max_tokens=1500,
+    language=Language.CHINESE,  # 使用前面设置的中文语言
+    questions_per_topic=6,       # 每个主题的问题数量
+    questions_per_subtopic=3,    # 每个子主题的问题数量
+    max_total_questions=15       # 最大总问题数量限制
 )
 
 logger.info("初始化问题生成器")
@@ -101,8 +103,8 @@ except Exception as e:
 
 # 定义要生成问题的主题
 topics = ["科学", "历史", "技术"]
-num_questions = 15
-logger.info(f"开始为主题 {topics} 生成 {num_questions} 个中文问题")
+max_total_questions = 15
+logger.info(f"开始为主题 {topics} 生成中文问题（最大数量: {max_total_questions}个）")
 
 try:
     # 单独尝试生成第一个主题的子主题
@@ -114,8 +116,9 @@ try:
     logger.info("现在开始完整的问题生成过程")
     questions = question_gen.generate_from_topics(
         topics=topics,
-        num_questions=num_questions,  # 总共生成15个问题
-        subtopics_per_topic=2  # 减少子主题数量以加快生成
+        subtopics_per_topic=2,            # 每个主题生成2个子主题
+        questions_per_subtopic=3,         # 每个子主题生成3个问题
+        max_total_questions=max_total_questions  # A限制总问题数为15个
     )
     
     logger.info(f"成功生成 {len(questions)} 个中文问题")
