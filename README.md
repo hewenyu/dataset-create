@@ -47,7 +47,9 @@ task = project.create_task(
 question_gen = QuestionGenerator()
 questions = question_gen.generate_from_topics(
     topics=["Science", "History", "Technology"],
-    num_questions=30
+    subtopics_per_topic=3,           # Generate 3 subtopics per topic
+    questions_per_subtopic=3,        # Generate 3 questions per subtopic
+    max_total_questions=30           # Limit total questions to 30
 )
 
 # Feed questions to LLM to create dataset
@@ -63,6 +65,33 @@ fine_tuned_model = fine_tuner.fine_tune(
     dataset=dataset,
     base_model="llama-3-8b",
     epochs=3
+)
+```
+
+### Enhanced Question Generation
+
+The tool provides fine-grained control over question generation:
+
+```python
+from dataset_creator.data_gen import QuestionGenerator
+from dataset_creator.data_gen.question_generator import QuestionGeneratorConfig
+
+# Configure question generator with advanced parameters
+question_config = QuestionGeneratorConfig(
+    questions_per_topic=5,         # Questions for main topics
+    questions_per_subtopic=3,      # Questions for each subtopic
+    max_total_questions=50,        # Maximum total questions to generate
+    temperature=0.7                # Control randomness of generation
+)
+
+question_gen = QuestionGenerator(config=question_config)
+
+# Generate questions with precise control
+questions = question_gen.generate_from_topics(
+    topics=["Science", "History", "Technology"],
+    subtopics_per_topic=3,           # Generate 3 subtopics per topic
+    questions_per_subtopic=4,        # Generate 4 questions per subtopic
+    max_total_questions=40           # Limit total questions to 40
 )
 ```
 
@@ -99,7 +128,9 @@ question_gen = QuestionGenerator(config=question_config)
 # Generate Chinese questions
 questions = question_gen.generate_from_topics(
     topics=["科学", "历史", "技术"],
-    num_questions=30
+    subtopics_per_topic=3,
+    questions_per_subtopic=3,
+    max_total_questions=30
 )
 ```
 
@@ -111,8 +142,11 @@ The tool also provides a CLI for easier use:
 # Generate a dataset from a set of topics
 dataset-creator generate-dataset --topics "Science,History,Technology" --output my_dataset.jsonl
 
+# Generate questions with precise control over numbers
+dataset-creator generate-questions --topics "Science,History,Technology" --subtopics-per-topic 3 --questions-per-subtopic 4 --max-total-questions 50
+
 # Generate a dataset in Chinese
-dataset-creator generate-questions --topics "科学,历史,技术" --language chinese --output chinese_questions.json
+dataset-creator generate-questions --topics "科学,历史,技术" --language chinese --subtopics-per-topic 3 --questions-per-subtopic 4 --max-total-questions 40 --output chinese_questions.json
 
 # Create a Chinese project
 dataset-creator create-project --name "chinese-project" --language chinese
@@ -129,6 +163,7 @@ dataset-creator create-task --project-dir "./projects/my-project" --name "chines
 - Integration with popular fine-tuning frameworks
 - Support for multiple model providers including OpenAI and SiliconFlow
 - **Multilingual support** for creating datasets in different languages (currently English and Chinese)
+- **Precise question generation control** with ability to specify questions per topic, per subtopic, and maximum total questions
 
 ## License
 
