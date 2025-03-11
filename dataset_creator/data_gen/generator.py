@@ -3,14 +3,19 @@ Generator module for creating dataset examples using large language models.
 """
 
 import json
-import requests
+import logging
+import time
 from typing import Dict, List, Optional, Union, Any
 
 import openai
+import requests
 from pydantic import BaseModel
 from tqdm import tqdm
 
 from dataset_creator.core import DatasetExample, Task
+
+# 配置日志记录
+logger = logging.getLogger("DataGenerator")
 
 
 class GeneratorConfig(BaseModel):
@@ -80,30 +85,38 @@ class DataGenerator:
         questions: List[str]
     ) -> List[DatasetExample]:
         """
-        Generate a dataset for a task by creating examples for each question.
+        Generate a dataset by creating examples for each question.
         
         Args:
-            task: Task to generate data for
-            questions: List of questions to generate answers for
+            task: The task to generate examples for
+            questions: List of questions to generate examples for
             
         Returns:
-            List of dataset examples
+            List of generated examples
         """
+        logger.info(f"开始为任务 '{task.name}' 生成数据集, 包含 {len(questions)} 个问题")
         examples = []
         
-        # Format system prompt
+        # Generate system prompt
         system_prompt = task.format_system_prompt()
+        logger.info(f"使用系统提示: '{system_prompt[:100]}...'")
         
-        # Use tqdm to show progress
-        for question in tqdm(questions, desc=f"Generating examples with {self.model}"):
-            # Generate example
-            example = self.generate_example(
-                question=question,
-                system_prompt=system_prompt,
-                thinking_instruction=task.thinking_instruction if self.config.use_thinking else None
-            )
-            examples.append(example)
+        # Generate examples for each question
+        for question in tqdm(questions, desc="Generating examples"):
+            try:
+                logger.info(f"处理问题: '{question[:100]}...'")
+                start_time = time.time()
+                example = self.generate_example(
+                    question=question,
+                    system_prompt=system_prompt,
+                    thinking_instruction=task.thinking_instruction if self.config.use_thinking else None
+                )
+                logger.info(f"成功生成示例，用时 {time.time() - start_time:.2f}秒")
+                examples.append(example)
+            except Exception as e:
+                logger.error(f"为问题 '{question[:50]}...' 生成示例时出错: {str(e)}", exc_info=True)
         
+        logger.info(f"数据集生成完成，生成了 {len(examples)}/{len(questions)} 个示例")
         return examples
     
     def generate_example(
@@ -113,32 +126,53 @@ class DataGenerator:
         thinking_instruction: Optional[str] = None
     ) -> DatasetExample:
         """
-        Generate a single example using the configured model.
+        Generate a single example for a question.
         
         Args:
-            question: The question to generate an answer for
+            question: The question to generate an example for
             system_prompt: System prompt to use
-            thinking_instruction: Optional instruction for "thinking" step
+            thinking_instruction: Instruction for generating thinking
             
         Returns:
-            A DatasetExample with the generated answer
+            A DatasetExample
         """
+        logger.info(f"生成单个示例, 问题: '{question[:50]}...'")
+        
         # Generate thinking if enabled
         thinking = None
-        if self.config.use_thinking and thinking_instruction:
-            thinking = self.generate_thinking(question, system_prompt, thinking_instruction)
+        if thinking_instruction:
+            logger.info("启用了思考链生成")
+            start_time = time.time()
+            thinking = self.generate_thinking(
+                question=question,
+                system_prompt=system_prompt,
+                thinking_instruction=thinking_instruction
+            )
+            logger.info(f"成功生成思考链，用时 {time.time() - start_time:.2f}秒, 长度: {len(thinking if thinking else '') } 字符")
         
         # Generate answer
-        answer = self.generate_answer(question, system_prompt, thinking)
+        logger.info("生成回答")
+        start_time = time.time()
+        answer = self.generate_answer(
+            question=question,
+            system_prompt=system_prompt,
+            thinking=thinking
+        )
+        logger.info(f"成功生成回答，用时 {time.time() - start_time:.2f}秒, 长度: {len(answer)} 字符")
         
-        # Create and return example
+        # Create and return the example
         return DatasetExample(
             question=question,
             answer=answer,
             system_prompt=system_prompt,
-            model_used=self.model,
             thinking=thinking,
-            metadata={"provider": self.provider}
+            model_used=self.model,
+            metadata={
+                "provider": self.provider,
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "top_p": self.config.top_p
+            }
         )
     
     def generate_thinking(
@@ -148,27 +182,23 @@ class DataGenerator:
         thinking_instruction: str
     ) -> str:
         """
-        Generate the "thinking" step for a question.
+        Generate thinking for a question.
         
         Args:
-            question: The question to think about
-            system_prompt: Base system prompt
-            thinking_instruction: Instruction for thinking
+            question: The question to generate thinking for
+            system_prompt: System prompt to use
+            thinking_instruction: Instruction for generating thinking
             
         Returns:
-            Generated thinking text
+            Generated thinking
         """
-        # Create a thinking-specific system prompt
-        thinking_system_prompt = self.config.thinking_system_prompt or GeneratorConfig.default_thinking_prompt()
-        
-        # Format full system prompt with thinking instruction
-        full_system_prompt = f"{system_prompt}\n\n{thinking_instruction}\n\n{thinking_system_prompt}"
+        logger.info(f"为问题生成思考链, 提供商: {self.provider}")
         
         if self.provider == "openai":
             response = openai.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": full_system_prompt},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": question}
                 ],
                 temperature=self.config.temperature,
@@ -177,24 +207,64 @@ class DataGenerator:
             )
             return response.choices[0].message.content
         elif self.provider == "siliconflow":
-            api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
-            response = requests.post(
-                f"{api_url}/chat/completions",
-                headers=self.siliconflow_headers,
-                json={
+            try:
+                # Combine system prompts
+                thinking_system_prompt = (
+                    self.config.thinking_system_prompt or 
+                    "You are a thoughtful assistant that thinks through problems step by step."
+                )
+                combined_system_prompt = f"{thinking_system_prompt}\n{system_prompt}"
+                
+                logger.info(f"使用思考系统提示: '{thinking_system_prompt[:50]}...'")
+                
+                api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+                endpoint = f"{api_url}/chat/completions"
+                
+                logger.info(f"调用 SiliconFlow API: {endpoint}")
+                
+                messages = [
+                    {"role": "system", "content": combined_system_prompt},
+                    {"role": "user", "content": f"{thinking_instruction}\n\nQuestion: {question}"}
+                ]
+                
+                request_data = {
                     "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": full_system_prompt},
-                        {"role": "user", "content": question}
-                    ],
+                    "messages": messages,
                     "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_tokens,
+                    "max_tokens": self.config.max_tokens or 1000,
                     "top_p": self.config.top_p
                 }
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
+                
+                logger.info(f"请求数据: {json.dumps(request_data)[:200]}...")
+                
+                start_time = time.time()
+                response = requests.post(
+                    endpoint,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_data,
+                    timeout=120  # 增加超时时间到120秒
+                )
+                duration = time.time() - start_time
+                logger.info(f"API 响应状态码: {response.status_code}, 用时: {duration:.2f}秒")
+                
+                if response.status_code != 200:
+                    logger.error(f"API调用失败: {response.status_code} - {response.text}")
+                    raise Exception(f"SiliconFlow API call failed with status {response.status_code}: {response.text}")
+                
+                result = response.json()
+                if "choices" not in result or len(result["choices"]) == 0:
+                    logger.error(f"API响应缺少choices字段: {result}")
+                    raise Exception("Invalid API response")
+                
+                thinking = result["choices"][0]["message"]["content"]
+                logger.info(f"思考链生成成功，长度: {len(thinking)} 字符")
+                return thinking
+            except Exception as e:
+                logger.error(f"生成思考链时出错: {str(e)}", exc_info=True)
+                raise
         else:
             # Default implementation for other providers
             raise NotImplementedError(f"Provider {self.provider} not supported yet")
@@ -206,16 +276,18 @@ class DataGenerator:
         thinking: Optional[str] = None
     ) -> str:
         """
-        Generate the answer for a question.
+        Generate answer for a question.
         
         Args:
-            question: The question to answer
+            question: The question to generate an answer for
             system_prompt: System prompt to use
-            thinking: Optional thinking to include in the context
+            thinking: Generated thinking to use (optional)
             
         Returns:
             Generated answer
         """
+        logger.info(f"为问题生成回答, 提供商: {self.provider}")
+        
         if self.provider == "openai":
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -237,32 +309,65 @@ class DataGenerator:
             )
             return response.choices[0].message.content
         elif self.provider == "siliconflow":
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question}
-            ]
-            
-            # Add thinking as assistant message if available
-            if thinking:
-                messages.append({"role": "assistant", "content": thinking})
-                # Add a user message asking for the final answer
-                messages.append({"role": "user", "content": "Based on your thinking, what is your final answer?"})
-            
-            api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
-            response = requests.post(
-                f"{api_url}/chat/completions",
-                headers=self.siliconflow_headers,
-                json={
+            try:
+                messages = [
+                    {"role": "system", "content": system_prompt}
+                ]
+                
+                if thinking:
+                    # Add thinking as a separate message
+                    messages.append({"role": "user", "content": f"Question: {question}\n\nThink about this step by step:"})
+                    messages.append({"role": "assistant", "content": thinking})
+                    messages.append({"role": "user", "content": "Now provide your final answer:"})
+                else:
+                    # No thinking, just answer the question directly
+                    messages.append({"role": "user", "content": f"Question: {question}"})
+                
+                logger.info(f"消息数量: {len(messages)}")
+                
+                api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+                endpoint = f"{api_url}/chat/completions"
+                
+                logger.info(f"调用 SiliconFlow API: {endpoint}")
+                
+                request_data = {
                     "model": self.model,
                     "messages": messages,
                     "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_tokens,
+                    "max_tokens": self.config.max_tokens or 1000,
                     "top_p": self.config.top_p
                 }
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
+                
+                logger.info(f"请求数据: {json.dumps(request_data)[:200]}...")
+                
+                start_time = time.time()
+                response = requests.post(
+                    endpoint,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_data,
+                    timeout=120  # 增加超时时间到120秒
+                )
+                duration = time.time() - start_time
+                logger.info(f"API 响应状态码: {response.status_code}, 用时: {duration:.2f}秒")
+                
+                if response.status_code != 200:
+                    logger.error(f"API调用失败: {response.status_code} - {response.text}")
+                    raise Exception(f"SiliconFlow API call failed with status {response.status_code}: {response.text}")
+                
+                result = response.json()
+                if "choices" not in result or len(result["choices"]) == 0:
+                    logger.error(f"API响应缺少choices字段: {result}")
+                    raise Exception("Invalid API response")
+                
+                answer = result["choices"][0]["message"]["content"]
+                logger.info(f"回答生成成功，长度: {len(answer)} 字符")
+                return answer
+            except Exception as e:
+                logger.error(f"生成回答时出错: {str(e)}", exc_info=True)
+                raise
         else:
             # Default implementation for other providers
             raise NotImplementedError(f"Provider {self.provider} not supported yet") 

@@ -4,10 +4,17 @@ Question generator module for creating questions from topics.
 
 import requests
 from typing import Dict, List, Optional, Union
+import logging
+import time
 
 import openai
 from pydantic import BaseModel
 from tqdm import tqdm
+
+
+# 配置日志记录
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("QuestionGenerator")
 
 
 class QuestionGeneratorConfig(BaseModel):
@@ -83,6 +90,7 @@ class QuestionGenerator:
         Returns:
             List of generated questions
         """
+        logger.info(f"开始为 {len(topics)} 个主题生成问题，目标总数: {num_questions if num_questions else '未指定'}")
         all_questions = []
         
         # Calculate questions per topic if total is specified
@@ -90,29 +98,48 @@ class QuestionGenerator:
         if num_questions:
             questions_per_topic = max(1, num_questions // len(topics))
         
+        logger.info(f"每个主题生成 {questions_per_topic} 个问题，每个主题生成 {subtopics_per_topic} 个子主题")
+        
         # Generate questions for each topic
         for topic in tqdm(topics, desc="Generating questions by topic"):
-            # First, generate subtopics
-            subtopics = self.generate_subtopics(topic, subtopics_per_topic)
+            logger.info(f"处理主题: '{topic}'")
             
-            # Generate questions for the main topic
-            topic_questions = self.generate_questions_for_topic(
-                topic, questions_per_topic
-            )
-            all_questions.extend(topic_questions)
-            
-            # Generate questions for each subtopic
-            for subtopic in subtopics:
-                subtopic_questions = self.generate_questions_for_topic(
-                    f"{topic} - {subtopic}", 
-                    questions_per_topic // subtopics_per_topic
+            try:
+                # First, generate subtopics
+                logger.info(f"为主题 '{topic}' 生成子主题")
+                start_time = time.time()
+                subtopics = self.generate_subtopics(topic, subtopics_per_topic)
+                logger.info(f"成功生成 {len(subtopics)} 个子主题，用时 {time.time() - start_time:.2f}秒")
+                logger.info(f"子主题列表: {subtopics}")
+                
+                # Generate questions for the main topic
+                logger.info(f"为主题 '{topic}' 生成问题")
+                start_time = time.time()
+                topic_questions = self.generate_questions_for_topic(
+                    topic, questions_per_topic
                 )
-                all_questions.extend(subtopic_questions)
+                logger.info(f"成功为主题 '{topic}' 生成 {len(topic_questions)} 个问题，用时 {time.time() - start_time:.2f}秒")
+                all_questions.extend(topic_questions)
+                
+                # Generate questions for each subtopic
+                for subtopic in subtopics:
+                    logger.info(f"为子主题 '{subtopic}' 生成问题")
+                    start_time = time.time()
+                    subtopic_questions = self.generate_questions_for_topic(
+                        f"{topic} - {subtopic}", 
+                        questions_per_topic // subtopics_per_topic
+                    )
+                    logger.info(f"成功为子主题 '{subtopic}' 生成 {len(subtopic_questions)} 个问题，用时 {time.time() - start_time:.2f}秒")
+                    all_questions.extend(subtopic_questions)
+            except Exception as e:
+                logger.error(f"处理主题 '{topic}' 时出错: {str(e)}", exc_info=True)
         
         # Limit to requested number if specified
         if num_questions and len(all_questions) > num_questions:
+            logger.info(f"限制问题数量从 {len(all_questions)} 到 {num_questions}")
             all_questions = all_questions[:num_questions]
-            
+        
+        logger.info(f"问题生成完成，总共 {len(all_questions)} 个问题")
         return all_questions
     
     def generate_subtopics(self, topic: str, num_subtopics: int) -> List[str]:
@@ -126,6 +153,8 @@ class QuestionGenerator:
         Returns:
             List of generated subtopics
         """
+        logger.info(f"使用提供商 '{self.provider}'，模型 '{self.model}' 为主题 '{topic}' 生成子主题")
+        
         if self.provider == "openai":
             prompt = f"""Generate {num_subtopics} specific subtopics for the topic "{topic}".
             
@@ -168,35 +197,70 @@ These subtopics should:
 Return only the list of subtopics, one per line."""
             
             api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
-            response = requests.post(
-                f"{api_url}/chat/completions",
-                headers=self.siliconflow_headers,
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": self.config.system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_tokens,
-                    "top_p": self.config.top_p
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
+            endpoint = f"{api_url}/chat/completions"
             
-            # Parse the response into a list of subtopics
-            subtopics_text = result["choices"][0]["message"]["content"]
-            subtopics = [
-                line.strip().strip('-').strip() 
-                for line in subtopics_text.split('\n') 
-                if line.strip()
-            ]
+            logger.info(f"调用 SiliconFlow API: {endpoint}")
+            logger.info(f"请求模型: {self.model}, 提示内容: '{prompt[:50]}...'")
             
-            # Limit to requested number
-            return subtopics[:num_subtopics]
+            request_data = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": self.config.system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "top_p": self.config.top_p
+            }
+            
+            try:
+                start_time = time.time()
+                response = requests.post(
+                    endpoint,
+                    headers=self.siliconflow_headers,
+                    json=request_data,
+                    timeout=120  # 增加超时时间到120秒
+                )
+                logger.info(f"API 响应状态码: {response.status_code}, 用时: {time.time() - start_time:.2f}秒")
+                
+                if response.status_code != 200:
+                    logger.error(f"API 调用失败: {response.status_code} - {response.text}")
+                    raise Exception(f"SiliconFlow API call failed with status {response.status_code}: {response.text}")
+                
+                result = response.json()
+                logger.info("成功解析 API 响应")
+                
+                # 记录响应结构
+                if "choices" not in result:
+                    logger.error(f"API 响应缺少 'choices' 字段: {result}")
+                    raise Exception(f"Invalid API response: missing 'choices' field")
+                
+                # Parse the response into a list of subtopics
+                subtopics_text = result["choices"][0]["message"]["content"]
+                logger.info(f"子主题原始响应: '{subtopics_text[:100]}...'")
+                
+                subtopics = [
+                    line.strip().strip('-').strip() 
+                    for line in subtopics_text.split('\n') 
+                    if line.strip()
+                ]
+                
+                # Limit to requested number
+                subtopics = subtopics[:num_subtopics]
+                logger.info(f"解析出 {len(subtopics)} 个子主题")
+                return subtopics
+            except requests.exceptions.Timeout:
+                logger.error(f"SiliconFlow API 请求超时")
+                raise Exception("SiliconFlow API request timed out")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"SiliconFlow API 请求错误: {str(e)}")
+                raise Exception(f"SiliconFlow API request failed: {str(e)}")
+            except Exception as e:
+                logger.error(f"子主题生成过程中出错: {str(e)}", exc_info=True)
+                raise
         else:
             # Default implementation for other providers
+            logger.error(f"不支持的提供商: {self.provider}")
             raise NotImplementedError(f"Provider {self.provider} not supported yet")
     
     def generate_questions_for_topic(self, topic: str, num_questions: int) -> List[str]:
@@ -210,6 +274,8 @@ Return only the list of subtopics, one per line."""
         Returns:
             List of generated questions
         """
+        logger.info(f"使用提供商 '{self.provider}'，模型 '{self.model}' 为主题 '{topic}' 生成 {num_questions} 个问题")
+        
         if self.provider == "openai":
             prompt = f"""Generate {num_questions} diverse and interesting questions about "{topic}".
             
@@ -256,33 +322,68 @@ The questions should:
 Return only the list of questions, one per line, without numbering."""
             
             api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
-            response = requests.post(
-                f"{api_url}/chat/completions",
-                headers=self.siliconflow_headers,
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": self.config.system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_tokens,
-                    "top_p": self.config.top_p
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
+            endpoint = f"{api_url}/chat/completions"
             
-            # Parse the response into a list of questions
-            questions_text = result["choices"][0]["message"]["content"]
-            questions = [
-                line.strip().strip('-').strip() 
-                for line in questions_text.split('\n') 
-                if line.strip()
-            ]
+            logger.info(f"调用 SiliconFlow API: {endpoint}")
+            logger.info(f"请求模型: {self.model}, 提示内容: '{prompt[:50]}...'")
             
-            # Limit to requested number
-            return questions[:num_questions]
+            request_data = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": self.config.system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "top_p": self.config.top_p
+            }
+            
+            try:
+                start_time = time.time()
+                response = requests.post(
+                    endpoint,
+                    headers=self.siliconflow_headers,
+                    json=request_data,
+                    timeout=120  # 增加超时时间到120秒
+                )
+                logger.info(f"API 响应状态码: {response.status_code}, 用时: {time.time() - start_time:.2f}秒")
+                
+                if response.status_code != 200:
+                    logger.error(f"API 调用失败: {response.status_code} - {response.text}")
+                    raise Exception(f"SiliconFlow API call failed with status {response.status_code}: {response.text}")
+                
+                result = response.json()
+                logger.info("成功解析 API 响应")
+                
+                # 记录响应结构
+                if "choices" not in result:
+                    logger.error(f"API 响应缺少 'choices' 字段: {result}")
+                    raise Exception(f"Invalid API response: missing 'choices' field")
+                
+                # Parse the response into a list of questions
+                questions_text = result["choices"][0]["message"]["content"]
+                logger.info(f"问题原始响应: '{questions_text[:100]}...'")
+                
+                questions = [
+                    line.strip().strip('-').strip() 
+                    for line in questions_text.split('\n') 
+                    if line.strip()
+                ]
+                
+                # Limit to requested number
+                questions = questions[:num_questions]
+                logger.info(f"解析出 {len(questions)} 个问题")
+                return questions
+            except requests.exceptions.Timeout:
+                logger.error(f"SiliconFlow API 请求超时")
+                raise Exception("SiliconFlow API request timed out")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"SiliconFlow API 请求错误: {str(e)}")
+                raise Exception(f"SiliconFlow API request failed: {str(e)}")
+            except Exception as e:
+                logger.error(f"问题生成过程中出错: {str(e)}", exc_info=True)
+                raise
         else:
             # Default implementation for other providers
+            logger.error(f"不支持的提供商: {self.provider}")
             raise NotImplementedError(f"Provider {self.provider} not supported yet") 
