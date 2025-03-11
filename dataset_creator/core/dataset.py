@@ -12,6 +12,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer
 
+from .task import Language
+
 
 class DatasetFormat(str, Enum):
     """Format of the dataset for fine-tuning"""
@@ -101,6 +103,7 @@ class Dataset(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
     model_used: str
     provider: str
+    language: Language = Language.ENGLISH  # 默认为英文
     examples: Dict[UUID, DatasetExample] = Field(default_factory=dict)
     splits: Dict[str, DatasetSplit] = Field(default_factory=dict)
     directory: Optional[Path] = None

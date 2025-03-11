@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer
 
-from .task import Task
+from .task import Task, Language
 
 
 class DatasetProject(BaseModel):
@@ -26,6 +26,7 @@ class DatasetProject(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     tasks: Dict[UUID, Task] = Field(default_factory=dict)
+    language: Language = Language.ENGLISH  # 默认语言为英文
     directory: Optional[Path] = None
     
     @field_serializer('created_at', 'updated_at')
@@ -38,23 +39,31 @@ class DatasetProject(BaseModel):
             return None
         return str(path)
     
-    def create_task(self, name: str, instruction: str, description: Optional[str] = None) -> Task:
+    def create_task(
+        self, 
+        name: str, 
+        instruction: str, 
+        description: Optional[str] = None,
+        language: Optional[Language] = None
+    ) -> Task:
         """
-        Create a new task within the project.
+        Create a new task in the project.
         
         Args:
-            name: The name of the task
-            instruction: The instruction for the task
+            name: Name of the task
+            instruction: Instruction for the task
             description: Optional description of the task
+            language: Language for the task (if None, uses project language)
             
         Returns:
-            A new Task instance
+            The created Task
         """
         task = Task(
             name=name,
-            instruction=instruction, 
+            instruction=instruction,
             description=description,
-            project_id=self.id
+            project_id=self.id,
+            language=language or self.language
         )
         self.tasks[task.id] = task
         self.updated_at = datetime.now()

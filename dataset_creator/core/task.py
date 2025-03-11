@@ -4,12 +4,19 @@ Task module defines the Task class representing a specific AI task.
 
 import json
 from datetime import datetime
+from enum import Enum
 from typing import Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from .dataset import Dataset
+
+
+class Language(str, Enum):
+    """Language for task and dataset generation"""
+    ENGLISH = "english"
+    CHINESE = "chinese"
 
 
 class Task(BaseModel):
@@ -27,6 +34,7 @@ class Task(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
     system_prompt_template: Optional[str] = None
     thinking_instruction: Optional[str] = None
+    language: Language = Language.ENGLISH  # 默认为英文
     datasets: Dict[UUID, Dataset] = Field(default_factory=dict)
     
     @field_serializer('created_at', 'updated_at')

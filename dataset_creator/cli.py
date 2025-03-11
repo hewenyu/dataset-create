@@ -12,6 +12,7 @@ from rich.table import Table
 
 from dataset_creator import DatasetProject
 from dataset_creator.core import Dataset, Task
+from dataset_creator.core.task import Language
 from dataset_creator.data_gen import QuestionGenerator
 from dataset_creator.fine_tune import ModelFineTuner
 from dataset_creator.fine_tune.fine_tuner import FineTuneProvider
@@ -24,12 +25,18 @@ console = Console()
 def create_project(
     name: str = typer.Option(..., help="Name of the project"),
     description: Optional[str] = typer.Option(None, help="Description of the project"),
-    output_dir: Optional[str] = typer.Option(None, help="Directory to save the project to")
+    output_dir: Optional[str] = typer.Option(None, help="Directory to save the project to"),
+    language: str = typer.Option("english", help="Project language (english or chinese)")
 ):
     """Create a new dataset project."""
-    console.print(f"Creating project: [bold]{name}[/bold]")
+    console.print(f"Creating project: [bold]{name}[/bold] with language: [bold]{language}[/bold]")
     
-    project = DatasetProject(name=name, description=description)
+    # Convert language string to Language enum
+    lang = Language.ENGLISH
+    if language.lower() == "chinese":
+        lang = Language.CHINESE
+        
+    project = DatasetProject(name=name, description=description, language=lang)
     
     if output_dir:
         output_path = project.save(Path(output_dir))
@@ -46,17 +53,27 @@ def create_task(
     name: str = typer.Option(..., help="Name of the task"),
     instruction: str = typer.Option(..., help="Instruction for the task"),
     description: Optional[str] = typer.Option(None, help="Description of the task"),
-    thinking_instruction: Optional[str] = typer.Option(None, help="Instruction for thinking step")
+    thinking_instruction: Optional[str] = typer.Option(None, help="Instruction for thinking step"),
+    language: Optional[str] = typer.Option(None, help="Task language (english or chinese, defaults to project language)")
 ):
     """Create a new task in a project."""
     console.print(f"Loading project from: [bold]{project_dir}[/bold]")
     project = DatasetProject.load(project_dir)
     
+    # Convert language string to Language enum if specified
+    lang = None
+    if language:
+        if language.lower() == "chinese":
+            lang = Language.CHINESE
+        else:
+            lang = Language.ENGLISH
+    
     console.print(f"Creating task: [bold]{name}[/bold]")
     task = project.create_task(
         name=name,
         instruction=instruction,
-        description=description
+        description=description,
+        language=lang
     )
     
     if thinking_instruction:
@@ -76,21 +93,56 @@ def generate_questions(
     provider: str = typer.Option("openai", help="Provider of the model (openai, siliconflow)"),
     api_key: Optional[str] = typer.Option(None, help="API key for the provider"),
     api_url: Optional[str] = typer.Option(None, help="API URL for the provider (for SiliconFlow)"),
-    output_file: str = typer.Option("questions.json", help="File to save questions to")
+    output_file: str = typer.Option("questions.json", help="File to save questions to"),
+    language: str = typer.Option("english", help="Language for questions (english or chinese)")
 ):
     """Generate questions from topics."""
+    # Parse topics
     topic_list = [t.strip() for t in topics.split(",")]
+    console.print(f"Generating {num_questions} questions for topics: [bold]{', '.join(topic_list)}[/bold]")
+    console.print(f"Using model: [bold]{model}[/bold] from provider: [bold]{provider}[/bold]")
+    console.print(f"Language: [bold]{language}[/bold]")
     
-    console.print(f"Generating [bold]{num_questions}[/bold] questions for topics: [bold]{', '.join(topic_list)}[/bold]")
+    # Set language
+    lang = Language.ENGLISH
+    if language.lower() == "chinese":
+        lang = Language.CHINESE
     
-    # Configure generator
+    # Set API key from environment if not provided
+    if not api_key:
+        if provider == "openai":
+            import os
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                console.print("[bold red]Error: No OpenAI API key provided. Please set OPENAI_API_KEY environment variable or pass --api-key.[/bold red]")
+                return
+        elif provider == "siliconflow":
+            import os
+            api_key = os.getenv("SILICONFLOW_API_KEY")
+            if not api_key:
+                console.print("[bold red]Error: No SiliconFlow API key provided. Please set SILICONFLOW_API_KEY environment variable or pass --api-key.[/bold red]")
+                return
+    
+    # Configure question generator
     from dataset_creator.data_gen.question_generator import QuestionGeneratorConfig
-    config = QuestionGeneratorConfig()
+    config = QuestionGeneratorConfig(
+        temperature=0.7,
+        language=lang
+    )
+    
     if api_url and provider == "siliconflow":
         config.siliconflow_api_url = api_url
     
-    generator = QuestionGenerator(model=model, provider=provider, api_key=api_key, config=config)
-    questions = generator.generate_from_topics(
+    # Create question generator
+    question_gen = QuestionGenerator(
+        model=model,
+        provider=provider,
+        api_key=api_key,
+        config=config
+    )
+    
+    # Generate questions
+    questions = question_gen.generate_from_topics(
         topics=topic_list,
         num_questions=num_questions
     )
@@ -99,18 +151,12 @@ def generate_questions(
     with open(output_file, "w") as f:
         json.dump(questions, f, indent=2)
     
-    console.print(f"Generated [bold]{len(questions)}[/bold] questions and saved to: [bold]{output_file}[/bold]")
+    # Print sample questions
+    console.print(f"\nGenerated [bold]{len(questions)}[/bold] questions. Sample:")
+    for i, q in enumerate(questions[:5]):
+        console.print(f"{i+1}. {q}")
     
-    # Print a sample of questions
-    table = Table(title="Sample Questions")
-    table.add_column("Topic", style="cyan")
-    table.add_column("Question", style="green")
-    
-    for i, question in enumerate(questions[:5]):
-        table.add_row(topic_list[i % len(topic_list)], question)
-    
-    console.print(table)
-    return questions
+    console.print(f"\nQuestions saved to: [bold]{output_file}[/bold]")
 
 
 @app.command()
@@ -124,33 +170,69 @@ def generate_dataset(
     api_key: Optional[str] = typer.Option(None, help="API key for the provider"),
     api_url: Optional[str] = typer.Option(None, help="API URL for the provider (for SiliconFlow)"),
     description: Optional[str] = typer.Option(None, help="Description of the dataset"),
-    use_thinking: bool = typer.Option(False, help="Whether to use thinking step")
+    use_thinking: bool = typer.Option(False, help="Whether to use thinking step"),
+    language: Optional[str] = typer.Option(None, help="Language for dataset (english or chinese, defaults to task language)")
 ):
     """Generate a dataset for a task."""
     console.print(f"Loading project from: [bold]{project_dir}[/bold]")
     project = DatasetProject.load(project_dir)
     
+    # Get task
     task = project.get_task(task_id)
     if not task:
-        console.print(f"[bold red]Error:[/bold red] Task with ID {task_id} not found")
-        raise typer.Exit(1)
+        console.print(f"[bold red]Error: Task with ID '{task_id}' not found in project.[/bold red]")
+        return
     
-    console.print(f"Loading questions from: [bold]{questions_file}[/bold]")
+    console.print(f"Using task: [bold]{task.name}[/bold]")
+    
+    # Set language
+    lang = None
+    if language:
+        if language.lower() == "chinese":
+            lang = Language.CHINESE
+        else:
+            lang = Language.ENGLISH
+    else:
+        lang = task.language
+    
+    console.print(f"Language for dataset: [bold]{lang.value}[/bold]")
+        
+    # Load questions
     with open(questions_file, "r") as f:
         questions = json.load(f)
     
-    console.print(f"Generating dataset [bold]{name}[/bold] with [bold]{len(questions)}[/bold] examples")
+    console.print(f"Loaded [bold]{len(questions)}[/bold] questions from [bold]{questions_file}[/bold]")
     
-    # Configure thinking if requested
+    # Set API key from environment if not provided
+    if not api_key:
+        if provider == "openai":
+            import os
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                console.print("[bold red]Error: No OpenAI API key provided. Please set OPENAI_API_KEY environment variable or pass --api-key.[/bold red]")
+                return
+        elif provider == "siliconflow":
+            import os
+            api_key = os.getenv("SILICONFLOW_API_KEY")
+            if not api_key:
+                console.print("[bold red]Error: No SiliconFlow API key provided. Please set SILICONFLOW_API_KEY environment variable or pass --api-key.[/bold red]")
+                return
+    
+    # Configure data generator
     from dataset_creator.data_gen.generator import GeneratorConfig
-    config = GeneratorConfig(use_thinking=use_thinking)
+    config = GeneratorConfig(
+        use_thinking=use_thinking,
+        temperature=0.7,
+        language=lang
+    )
+    
     if api_url and provider == "siliconflow":
         config.siliconflow_api_url = api_url
     
-    # Create data generator with config
+    # Create data generator
     from dataset_creator.data_gen import DataGenerator
     data_generator = DataGenerator(
-        model=model, 
+        model=model,
         provider=provider,
         api_key=api_key,
         config=config

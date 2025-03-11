@@ -5,6 +5,7 @@ Generator module for creating dataset examples using large language models.
 import json
 import logging
 import time
+from enum import Enum
 from typing import Dict, List, Optional, Union, Any
 
 import openai
@@ -18,6 +19,12 @@ from dataset_creator.core import DatasetExample, Task
 logger = logging.getLogger("DataGenerator")
 
 
+class Language(str, Enum):
+    """Language for dataset generation"""
+    ENGLISH = "english"
+    CHINESE = "chinese"
+
+
 class GeneratorConfig(BaseModel):
     """Configuration for data generation"""
     temperature: float = 0.7
@@ -25,6 +32,7 @@ class GeneratorConfig(BaseModel):
     top_p: float = 1.0
     use_thinking: bool = False
     thinking_system_prompt: Optional[str] = None
+    language: Language = Language.ENGLISH  # 默认为英文
     # SiliconFlow specific configs
     siliconflow_api_url: Optional[str] = "https://api.siliconflow.cn/v1"
     
@@ -94,7 +102,7 @@ class DataGenerator:
         Returns:
             List of generated examples
         """
-        logger.info(f"开始为任务 '{task.name}' 生成数据集, 包含 {len(questions)} 个问题")
+        logger.info(f"开始为任务 '{task.name}' 生成数据集, 包含 {len(questions)} 个问题, 语言: {task.language.value}")
         examples = []
         
         # Generate system prompt
@@ -109,7 +117,8 @@ class DataGenerator:
                 example = self.generate_example(
                     question=question,
                     system_prompt=system_prompt,
-                    thinking_instruction=task.thinking_instruction if self.config.use_thinking else None
+                    thinking_instruction=task.thinking_instruction if self.config.use_thinking else None,
+                    language=task.language
                 )
                 logger.info(f"成功生成示例，用时 {time.time() - start_time:.2f}秒")
                 examples.append(example)
@@ -123,7 +132,8 @@ class DataGenerator:
         self, 
         question: str,
         system_prompt: str,
-        thinking_instruction: Optional[str] = None
+        thinking_instruction: Optional[str] = None,
+        language: Optional[Language] = None
     ) -> DatasetExample:
         """
         Generate a single example for a question.
@@ -132,11 +142,13 @@ class DataGenerator:
             question: The question to generate an example for
             system_prompt: System prompt to use
             thinking_instruction: Instruction for generating thinking
+            language: Language to generate in (default: English)
             
         Returns:
             A DatasetExample
         """
-        logger.info(f"生成单个示例, 问题: '{question[:50]}...'")
+        language = language or self.config.language
+        logger.info(f"生成单个示例, 问题: '{question[:50]}...', 语言: {language.value}")
         
         # Generate thinking if enabled
         thinking = None
@@ -146,7 +158,8 @@ class DataGenerator:
             thinking = self.generate_thinking(
                 question=question,
                 system_prompt=system_prompt,
-                thinking_instruction=thinking_instruction
+                thinking_instruction=thinking_instruction,
+                language=language
             )
             logger.info(f"成功生成思考链，用时 {time.time() - start_time:.2f}秒, 长度: {len(thinking if thinking else '') } 字符")
         
@@ -156,7 +169,8 @@ class DataGenerator:
         answer = self.generate_answer(
             question=question,
             system_prompt=system_prompt,
-            thinking=thinking
+            thinking=thinking,
+            language=language
         )
         logger.info(f"成功生成回答，用时 {time.time() - start_time:.2f}秒, 长度: {len(answer)} 字符")
         
@@ -171,7 +185,8 @@ class DataGenerator:
                 "provider": self.provider,
                 "temperature": self.config.temperature,
                 "max_tokens": self.config.max_tokens,
-                "top_p": self.config.top_p
+                "top_p": self.config.top_p,
+                "language": language.value
             }
         )
     
@@ -179,7 +194,8 @@ class DataGenerator:
         self, 
         question: str, 
         system_prompt: str, 
-        thinking_instruction: str
+        thinking_instruction: str,
+        language: Optional[Language] = None
     ) -> str:
         """
         Generate thinking for a question.
@@ -188,23 +204,33 @@ class DataGenerator:
             question: The question to generate thinking for
             system_prompt: System prompt to use
             thinking_instruction: Instruction for generating thinking
+            language: Language to generate in (default: English)
             
         Returns:
             Generated thinking
         """
-        logger.info(f"为问题生成思考链, 提供商: {self.provider}")
+        language = language or self.config.language
+        logger.info(f"为问题生成思考链, 提供商: {self.provider}, 语言: {language.value}")
         
+        # 根据语言添加额外指导
+        language_instruction = ""
+        if language == Language.CHINESE:
+            language_instruction = "请用中文回答。"
+        elif language == Language.ENGLISH:
+            language_instruction = "Please respond in English."
+
         if self.provider == "openai":
             response = openai.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question}
+                    {"role": "system", "content": f"{system_prompt}\n{language_instruction}"},
+                    {"role": "user", "content": f"{thinking_instruction}\n\n{question}"}
                 ],
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
                 top_p=self.config.top_p
             )
+            
             return response.choices[0].message.content
         elif self.provider == "siliconflow":
             try:
@@ -213,7 +239,7 @@ class DataGenerator:
                     self.config.thinking_system_prompt or 
                     "You are a thoughtful assistant that thinks through problems step by step."
                 )
-                combined_system_prompt = f"{thinking_system_prompt}\n{system_prompt}"
+                combined_system_prompt = f"{thinking_system_prompt}\n{system_prompt}\n{language_instruction}"
                 
                 logger.info(f"使用思考系统提示: '{thinking_system_prompt[:50]}...'")
                 
@@ -257,7 +283,7 @@ class DataGenerator:
                 result = response.json()
                 if "choices" not in result or len(result["choices"]) == 0:
                     logger.error(f"API响应缺少choices字段: {result}")
-                    raise Exception("Invalid API response")
+                    raise Exception(f"Invalid API response: missing 'choices' field")
                 
                 thinking = result["choices"][0]["message"]["content"]
                 logger.info(f"思考链生成成功，长度: {len(thinking)} 字符")
@@ -267,13 +293,15 @@ class DataGenerator:
                 raise
         else:
             # Default implementation for other providers
+            logger.error(f"不支持的提供商: {self.provider}")
             raise NotImplementedError(f"Provider {self.provider} not supported yet")
     
     def generate_answer(
         self, 
         question: str, 
         system_prompt: str,
-        thinking: Optional[str] = None
+        thinking: Optional[str] = None,
+        language: Optional[Language] = None
     ) -> str:
         """
         Generate answer for a question.
@@ -282,24 +310,35 @@ class DataGenerator:
             question: The question to generate an answer for
             system_prompt: System prompt to use
             thinking: Generated thinking to use (optional)
+            language: Language to generate in (default: English)
             
         Returns:
             Generated answer
         """
-        logger.info(f"为问题生成回答, 提供商: {self.provider}")
+        language = language or self.config.language
+        logger.info(f"为问题生成回答, 提供商: {self.provider}, 语言: {language.value}")
+        
+        # 根据语言添加额外指导
+        language_instruction = ""
+        if language == Language.CHINESE:
+            language_instruction = "请用中文回答。"
+        elif language == Language.ENGLISH:
+            language_instruction = "Please respond in English."
         
         if self.provider == "openai":
             messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question}
+                {"role": "system", "content": f"{system_prompt}\n{language_instruction}"}
             ]
             
-            # Add thinking as assistant message if available
             if thinking:
+                # Add thinking as a separate message
+                messages.append({"role": "user", "content": f"Question: {question}\n\nThink about this step by step:"})
                 messages.append({"role": "assistant", "content": thinking})
-                # Add a user message asking for the final answer
-                messages.append({"role": "user", "content": "Based on your thinking, what is your final answer?"})
-            
+                messages.append({"role": "user", "content": "Now provide your final answer:"})
+            else:
+                # No thinking, just answer the question directly
+                messages.append({"role": "user", "content": f"Question: {question}"})
+                
             response = openai.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -307,11 +346,12 @@ class DataGenerator:
                 max_tokens=self.config.max_tokens,
                 top_p=self.config.top_p
             )
+            
             return response.choices[0].message.content
         elif self.provider == "siliconflow":
             try:
                 messages = [
-                    {"role": "system", "content": system_prompt}
+                    {"role": "system", "content": f"{system_prompt}\n{language_instruction}"}
                 ]
                 
                 if thinking:
@@ -360,7 +400,7 @@ class DataGenerator:
                 result = response.json()
                 if "choices" not in result or len(result["choices"]) == 0:
                     logger.error(f"API响应缺少choices字段: {result}")
-                    raise Exception("Invalid API response")
+                    raise Exception(f"Invalid API response: missing 'choices' field")
                 
                 answer = result["choices"][0]["message"]["content"]
                 logger.info(f"回答生成成功，长度: {len(answer)} 字符")
@@ -370,4 +410,5 @@ class DataGenerator:
                 raise
         else:
             # Default implementation for other providers
+            logger.error(f"不支持的提供商: {self.provider}")
             raise NotImplementedError(f"Provider {self.provider} not supported yet") 
