@@ -4,6 +4,7 @@ Fine-tuning module for training smaller models on generated datasets.
 
 import json
 import os
+import requests
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
@@ -17,6 +18,7 @@ class FineTuneProvider(str, Enum):
     """Supported fine-tuning providers"""
     OPENAI = "openai"
     HUGGINGFACE = "huggingface"
+    SILICONFLOW = "siliconflow"
     LOCAL = "local"
 
 
@@ -41,6 +43,8 @@ class FineTuneConfig(BaseModel):
     lora_alpha: int = 32
     lora_dropout: float = 0.05
     output_dir: Optional[str] = None
+    # SiliconFlow specific configs
+    siliconflow_api_url: Optional[str] = "https://api.siliconflow.cn/v1"
 
 
 class FineTuneJob(BaseModel):
@@ -61,7 +65,7 @@ class ModelFineTuner:
     Fine-tuner for training smaller models on generated datasets.
     
     This class handles the fine-tuning process using different providers
-    (OpenAI, Hugging Face, or local training).
+    (OpenAI, Hugging Face, SiliconFlow, or local training).
     """
     
     def __init__(
@@ -84,6 +88,12 @@ class ModelFineTuner:
             import openai
             if api_key:
                 openai.api_key = api_key
+        elif self.config.provider == FineTuneProvider.SILICONFLOW:
+            # SiliconFlow uses an API key in the header
+            self.siliconflow_headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
     
     def fine_tune(
         self,
@@ -133,6 +143,8 @@ class ModelFineTuner:
             self._fine_tune_openai(job, output_name)
         elif ft_config.provider == FineTuneProvider.HUGGINGFACE:
             self._fine_tune_huggingface(job, output_name)
+        elif ft_config.provider == FineTuneProvider.SILICONFLOW:
+            self._fine_tune_siliconflow(job, output_name)
         elif ft_config.provider == FineTuneProvider.LOCAL:
             self._fine_tune_local(job, output_name)
         else:
@@ -164,6 +176,9 @@ class ModelFineTuner:
         
         if provider == FineTuneProvider.OPENAI:
             # OpenAI uses chat format
+            return exports_dir / f"{split_name}_chat_jsonl.jsonl"
+        elif provider == FineTuneProvider.SILICONFLOW:
+            # SiliconFlow uses chat format similar to OpenAI
             return exports_dir / f"{split_name}_chat_jsonl.jsonl"
         elif provider == FineTuneProvider.HUGGINGFACE:
             # HuggingFace uses instruction format
@@ -227,6 +242,85 @@ class ModelFineTuner:
         
         return response.id
     
+    def _fine_tune_siliconflow(self, job: FineTuneJob, output_name: Optional[str] = None) -> None:
+        """
+        Fine-tune a model using SiliconFlow's API.
+        
+        Args:
+            job: Fine-tuning job
+            output_name: Name for the fine-tuned model
+        """
+        try:
+            # Upload file to SiliconFlow
+            file_id = self._upload_file_siliconflow(job.dataset_path)
+            
+            # Prepare fine-tuning request
+            api_url = job.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+            url = f"{api_url}/fine_tuning/jobs"
+            
+            suffix = output_name or f"ft-{job.dataset_path.stem}"
+            model_name = f"{job.base_model}-{suffix}"
+            
+            payload = {
+                "training_file": file_id,
+                "model": job.base_model,
+                "suffix": suffix,
+                "hyperparameters": {
+                    "n_epochs": job.config.epochs,
+                    "batch_size": job.config.batch_size,
+                    "learning_rate_multiplier": job.config.learning_rate
+                }
+            }
+            
+            # Create fine-tuning job
+            response = requests.post(
+                url, 
+                headers=self.siliconflow_headers,
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            # Update job with SiliconFlow job ID
+            job.id = result.get("id")
+            job.status = FineTuneStatus.RUNNING
+            
+            print(f"Started SiliconFlow fine-tuning job: {job.id}")
+            print(f"Fine-tuned model will be available as: {model_name}")
+            
+        except Exception as e:
+            job.status = FineTuneStatus.FAILED
+            job.error_message = str(e)
+            print(f"Error starting SiliconFlow fine-tuning job: {e}")
+    
+    def _upload_file_siliconflow(self, file_path: Path) -> str:
+        """
+        Upload a file to SiliconFlow for fine-tuning.
+        
+        Args:
+            file_path: Path to the file to upload
+            
+        Returns:
+            SiliconFlow file ID
+        """
+        api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+        url = f"{api_url}/files"
+        
+        with open(file_path, "rb") as f:
+            files = {
+                "file": (file_path.name, f, "application/jsonl"),
+                "purpose": (None, "fine-tune")
+            }
+            response = requests.post(
+                url,
+                files=files,
+                headers={"Authorization": self.siliconflow_headers["Authorization"]}
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+        return result.get("id")
+    
     def _fine_tune_huggingface(self, job: FineTuneJob, output_name: Optional[str] = None) -> None:
         """
         Fine-tune a model using Hugging Face's transformers.
@@ -265,6 +359,25 @@ class ModelFineTuner:
         Returns:
             Current status of the job
         """
-        # This is a placeholder for the actual implementation
-        # In a real implementation, you would check the status with the provider
-        return FineTuneStatus.PENDING 
+        if self.config.provider == FineTuneProvider.OPENAI:
+            import openai
+            try:
+                response = openai.fine_tuning.jobs.retrieve(job_id)
+                return FineTuneStatus(response.status)
+            except Exception as e:
+                print(f"Error getting OpenAI job status: {e}")
+                return FineTuneStatus.FAILED
+        elif self.config.provider == FineTuneProvider.SILICONFLOW:
+            try:
+                api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+                url = f"{api_url}/fine_tuning/jobs/{job_id}"
+                response = requests.get(url, headers=self.siliconflow_headers)
+                response.raise_for_status()
+                result = response.json()
+                return FineTuneStatus(result.get("status", "failed"))
+            except Exception as e:
+                print(f"Error getting SiliconFlow job status: {e}")
+                return FineTuneStatus.FAILED
+        else:
+            # Default implementation for other providers
+            return FineTuneStatus.PENDING 

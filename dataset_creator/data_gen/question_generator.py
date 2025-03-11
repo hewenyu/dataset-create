@@ -2,6 +2,7 @@
 Question generator module for creating questions from topics.
 """
 
+import requests
 from typing import Dict, List, Optional, Union
 
 import openai
@@ -20,6 +21,8 @@ class QuestionGeneratorConfig(BaseModel):
         "on specific topics. Your questions should be clear, specific, and varied in "
         "difficulty and style."
     )
+    # SiliconFlow specific configs
+    siliconflow_api_url: Optional[str] = "https://api.siliconflow.cn/v1"
 
 
 class QuestionGenerator:
@@ -42,7 +45,7 @@ class QuestionGenerator:
         
         Args:
             model: Model to use for generation (e.g., 'gpt-4')
-            provider: Provider of the model (e.g., 'openai')
+            provider: Provider of the model (e.g., 'openai', 'siliconflow')
             api_key: API key for the provider
             config: Optional generation configuration
         """
@@ -56,6 +59,12 @@ class QuestionGenerator:
             # Only set key if provided, otherwise use environment
             if api_key:
                 openai.api_key = api_key
+        elif provider == "siliconflow":
+            # SiliconFlow uses an API key in the header
+            self.siliconflow_headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
     
     def generate_from_topics(
         self,
@@ -148,6 +157,44 @@ Return only the list of subtopics, one per line."""
             
             # Limit to requested number
             return subtopics[:num_subtopics]
+        elif self.provider == "siliconflow":
+            prompt = f"""Generate {num_subtopics} specific subtopics for the topic "{topic}".
+            
+These subtopics should:
+1. Be more specific aspects or areas within the main topic
+2. Be diverse and cover different aspects of the main topic
+3. Be suitable for generating interesting questions
+
+Return only the list of subtopics, one per line."""
+            
+            api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+            response = requests.post(
+                f"{api_url}/chat/completions",
+                headers=self.siliconflow_headers,
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": self.config.system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_tokens,
+                    "top_p": self.config.top_p
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            # Parse the response into a list of subtopics
+            subtopics_text = result["choices"][0]["message"]["content"]
+            subtopics = [
+                line.strip().strip('-').strip() 
+                for line in subtopics_text.split('\n') 
+                if line.strip()
+            ]
+            
+            # Limit to requested number
+            return subtopics[:num_subtopics]
         else:
             # Default implementation for other providers
             raise NotImplementedError(f"Provider {self.provider} not supported yet")
@@ -188,6 +235,46 @@ Return only the list of questions, one per line, without numbering."""
             
             # Parse the response into a list of questions
             questions_text = response.choices[0].message.content
+            questions = [
+                line.strip().strip('-').strip() 
+                for line in questions_text.split('\n') 
+                if line.strip()
+            ]
+            
+            # Limit to requested number
+            return questions[:num_questions]
+        elif self.provider == "siliconflow":
+            prompt = f"""Generate {num_questions} diverse and interesting questions about "{topic}".
+            
+The questions should:
+1. Be clear and specific
+2. Vary in difficulty (some easy, some challenging)
+3. Cover different aspects of the topic
+4. Be suitable for testing knowledge or reasoning about the topic
+5. Be phrased as direct questions (not statements)
+
+Return only the list of questions, one per line, without numbering."""
+            
+            api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+            response = requests.post(
+                f"{api_url}/chat/completions",
+                headers=self.siliconflow_headers,
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": self.config.system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_tokens,
+                    "top_p": self.config.top_p
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            # Parse the response into a list of questions
+            questions_text = result["choices"][0]["message"]["content"]
             questions = [
                 line.strip().strip('-').strip() 
                 for line in questions_text.split('\n') 

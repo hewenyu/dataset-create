@@ -3,6 +3,7 @@ Generator module for creating dataset examples using large language models.
 """
 
 import json
+import requests
 from typing import Dict, List, Optional, Union, Any
 
 import openai
@@ -19,6 +20,8 @@ class GeneratorConfig(BaseModel):
     top_p: float = 1.0
     use_thinking: bool = False
     thinking_system_prompt: Optional[str] = None
+    # SiliconFlow specific configs
+    siliconflow_api_url: Optional[str] = "https://api.siliconflow.cn/v1"
     
     @classmethod
     def default_thinking_prompt(cls) -> str:
@@ -50,7 +53,7 @@ class DataGenerator:
         
         Args:
             model: Model to use for generation (e.g., 'gpt-4', 'claude-3-opus')
-            provider: Provider of the model (e.g., 'openai', 'anthropic')
+            provider: Provider of the model (e.g., 'openai', 'anthropic', 'siliconflow')
             api_key: API key for the provider
             config: Optional generation configuration
         """
@@ -64,6 +67,12 @@ class DataGenerator:
             # Only set key if provided, otherwise use environment
             if api_key:
                 openai.api_key = api_key
+        elif provider == "siliconflow":
+            # SiliconFlow uses an API key in the header
+            self.siliconflow_headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
     
     def generate_dataset(
         self, 
@@ -167,6 +176,25 @@ class DataGenerator:
                 top_p=self.config.top_p
             )
             return response.choices[0].message.content
+        elif self.provider == "siliconflow":
+            api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+            response = requests.post(
+                f"{api_url}/chat/completions",
+                headers=self.siliconflow_headers,
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": full_system_prompt},
+                        {"role": "user", "content": question}
+                    ],
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_tokens,
+                    "top_p": self.config.top_p
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
         else:
             # Default implementation for other providers
             raise NotImplementedError(f"Provider {self.provider} not supported yet")
@@ -208,6 +236,33 @@ class DataGenerator:
                 top_p=self.config.top_p
             )
             return response.choices[0].message.content
+        elif self.provider == "siliconflow":
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ]
+            
+            # Add thinking as assistant message if available
+            if thinking:
+                messages.append({"role": "assistant", "content": thinking})
+                # Add a user message asking for the final answer
+                messages.append({"role": "user", "content": "Based on your thinking, what is your final answer?"})
+            
+            api_url = self.config.siliconflow_api_url or "https://api.siliconflow.cn/v1"
+            response = requests.post(
+                f"{api_url}/chat/completions",
+                headers=self.siliconflow_headers,
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_tokens,
+                    "top_p": self.config.top_p
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
         else:
             # Default implementation for other providers
             raise NotImplementedError(f"Provider {self.provider} not supported yet") 

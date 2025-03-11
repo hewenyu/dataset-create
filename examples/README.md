@@ -25,6 +25,27 @@ Make sure to set your OpenAI API key in the script or as an environment variable
 os.environ["OPENAI_API_KEY"] = "your-api-key-here"
 ```
 
+### SiliconFlow Usage
+
+The `siliconflow_example.py` script demonstrates how to use SiliconFlow API:
+
+1. Generating questions from topics using SiliconFlow models
+2. Generating a dataset using SiliconFlow models
+3. Fine-tuning a model on SiliconFlow
+
+To run:
+
+```bash
+python examples/siliconflow_example.py
+```
+
+Make sure to set your SiliconFlow API key in the script:
+
+```python
+SILICONFLOW_API_KEY = "your-siliconflow-api-key-here"
+SILICONFLOW_API_URL = "https://api.siliconflow.cn/v1"  # Default API URL
+```
+
 ## CLI Examples
 
 The Dataset Creator also provides a command-line interface. Here are some example commands:
@@ -41,14 +62,32 @@ dataset-creator create-project --name "qa-project" --description "Question answe
 dataset-creator generate-questions --topics "Science,History,Technology" --num-questions 30 --output-file questions.json
 ```
 
+Using SiliconFlow:
+
+```bash
+dataset-creator generate-questions --topics "Science,History,Technology" --num-questions 30 --provider siliconflow --api-key "your-api-key" --output-file questions.json
+```
+
 ### Generate a Dataset
 
 ```bash
 dataset-creator generate-dataset --task-id "your-task-id" --project-dir "./projects/qa-project" --questions-file questions.json --name "qa-dataset" --model "gpt-4" --use-thinking
 ```
 
+Using SiliconFlow:
+
+```bash
+dataset-creator generate-dataset --task-id "your-task-id" --project-dir "./projects/qa-project" --questions-file questions.json --name "qa-dataset" --model "gpt-3.5-turbo" --provider siliconflow --api-key "your-api-key" --use-thinking
+```
+
 ### Fine-tune a Model
 
 ```bash
 dataset-creator fine-tune --dataset-dir "./datasets/qa-dataset" --base-model "gpt-3.5-turbo" --output-name "my-qa-model" --epochs 3
+```
+
+Using SiliconFlow:
+
+```bash
+dataset-creator fine-tune --dataset-dir "./datasets/qa-dataset" --base-model "llama-3-8b" --output-name "my-qa-model" --provider siliconflow --api-key "your-api-key" --epochs 3
 ``` 
