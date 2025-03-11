@@ -72,6 +72,9 @@ task.thinking_instruction = (
     "注意使用温柔亲切的语气，同时保持真诚自然的对话风格。"
 )
 
+# 输出思考链指令，确认其设置正确
+logger.info(f"设置的思考链指令: {task.thinking_instruction}")
+
 # 保存项目
 logger.info("保存项目")
 try:
@@ -138,12 +141,18 @@ except Exception as e:
 
 # 3. 生成数据集
 logger.info("配置数据生成器")
-# 配置数据生成器
+# 配置数据生成器，确保启用思考链生成
 data_config = GeneratorConfig(
     use_thinking=True,  # 启用思考链生成
     temperature=0.8,  # 增加多样性
     max_tokens=2000,
-    language=language
+    language=language,
+    # 添加自定义的思考系统提示，与task.thinking_instruction配合使用
+    thinking_system_prompt=(
+        "你是一个以女性视角思考问题的电子女友助手。"
+        "请在回答问题前，先仔细思考如何从女友角色出发给予最温暖、体贴的回应。"
+        "思考应该包括对用户情感需求的分析，以及如何以女性特质回应这些需求。"
+    )
 )
 
 logger.info("初始化数据生成器")
@@ -155,22 +164,39 @@ try:
         config=data_config
     )
     logger.info("数据生成器初始化成功")
+    # 显式确认是否启用思考链生成
+    logger.info(f"思考链生成启用状态: {data_config.use_thinking}")
+    logger.info(f"思考系统提示: {data_config.thinking_system_prompt}")
 except Exception as e:
     logger.error(f"初始化数据生成器时出错: {str(e)}", exc_info=True)
     sys.exit(f"初始化数据生成器失败: {str(e)}")
 
 # 设置最大生成示例数
-max_examples = 20  # 将示例数量设为较小的值，以避免过多API调用
+max_examples = 200  # 与问题数量相匹配，确保所有问题都被处理
 logger.info(f"设置最大生成示例数量: {max_examples}")
 
 logger.info("开始生成数据集")
 try:
+    # 确保在生成数据集时传递正确的参数
+    logger.info(f"生成数据集时使用的思考链指令: {task.thinking_instruction[:50]}...")
+    logger.info(f"思考链启用状态: {data_config.use_thinking}")
+    
     examples = data_generator.generate_dataset(
         task=task,
         questions=questions,
         max_examples=max_examples
     )
     logger.info(f"成功生成 {len(examples)} 个示例")
+    
+    # 验证生成的示例是否包含思考链
+    thinking_chains_count = sum(1 for ex in examples if ex.thinking)
+    logger.info(f"生成的示例中包含思考链的数量: {thinking_chains_count}/{len(examples)}")
+    
+    # 如果有示例，输出第一个示例的思考链片段作为验证
+    if examples and examples[0].thinking:
+        logger.info(f"示例思考链片段: {examples[0].thinking[:100]}...")
+    else:
+        logger.warning("未在生成的示例中找到思考链，请检查生成配置")
 except Exception as e:
     logger.error(f"生成数据集示例时出错: {str(e)}", exc_info=True)
     sys.exit(f"生成数据集示例失败: {str(e)}")

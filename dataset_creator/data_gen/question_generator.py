@@ -26,6 +26,8 @@ class QuestionGeneratorConfig(BaseModel):
     max_tokens: int = 2000
     top_p: float = 1.0
     questions_per_topic: int = 10
+    questions_per_subtopic: int = 3  # 新增：每个子主题的问题数量
+    max_total_questions: Optional[int] = None  # 新增：最大总问题数量限制
     language: Language = Language.ENGLISH  # 默认为英文
     system_prompt: str = (
         "You are a helpful assistant that generates diverse, high-quality questions "
@@ -82,6 +84,8 @@ class QuestionGenerator:
         topics: List[str],
         num_questions: Optional[int] = None,
         subtopics_per_topic: int = 3,
+        questions_per_subtopic: Optional[int] = None,
+        max_total_questions: Optional[int] = None,
         language: Optional[Language] = None
     ) -> List[str]:
         """
@@ -89,34 +93,67 @@ class QuestionGenerator:
         
         Args:
             topics: List of topics to generate questions for
-            num_questions: Total number of questions to generate (distributed across topics)
+            num_questions: 已废弃，请使用 max_total_questions 参数
             subtopics_per_topic: Number of subtopics to generate per topic
+            questions_per_subtopic: Number of questions to generate per subtopic
+            max_total_questions: Maximum total number of questions to generate
             language: Language to generate questions in (default uses config.language)
             
         Returns:
             List of generated questions
         """
         language = language or self.config.language
-        logger.info(f"开始为 {len(topics)} 个主题生成问题，目标总数: {num_questions if num_questions else '未指定'}, 语言: {language.value}")
+        
+        # 使用传入的参数或配置中的默认值
+        questions_per_subtopic = questions_per_subtopic or self.config.questions_per_subtopic
+        questions_per_main_topic = self.config.questions_per_topic
+        max_total_questions = max_total_questions or num_questions or self.config.max_total_questions
+        
+        logger.info(f"开始为 {len(topics)} 个主题生成问题，最大总数: {max_total_questions if max_total_questions else '未指定'}, 语言: {language.value}")
         all_questions = []
         
-        # Calculate questions per topic if total is specified
-        questions_per_topic = self.config.questions_per_topic
-        if num_questions:
-            questions_per_topic = max(1, num_questions // len(topics))
+        # 初始计划的问题总数估算
+        questions_per_topic_total = questions_per_main_topic + (subtopics_per_topic * questions_per_subtopic)
+        estimated_total = len(topics) * questions_per_topic_total
         
-        logger.info(f"每个主题生成 {questions_per_topic} 个问题，每个主题生成 {subtopics_per_topic} 个子主题")
+        logger.info(f"计划配置: 每个主题 {questions_per_main_topic} 个问题，每个主题 {subtopics_per_topic} 个子主题，每个子主题 {questions_per_subtopic} 个问题")
+        logger.info(f"估计总问题数: {estimated_total}个{' (将被限制为 '+str(max_total_questions)+' 个)' if max_total_questions and estimated_total > max_total_questions else ''}")
         
         # Generate questions for each topic
-        for topic in tqdm(topics, desc="Generating questions by topic"):
-            # 检查是否已达到目标问题数量
-            if num_questions and len(all_questions) >= num_questions:
-                logger.info(f"已达到目标问题数量 {num_questions}，停止生成")
+        for topic_idx, topic in enumerate(tqdm(topics, desc="Generating questions by topic")):
+            # 检查是否已达到最大总问题数量
+            if max_total_questions and len(all_questions) >= max_total_questions:
+                logger.info(f"已达到最大问题数量 {max_total_questions}，停止生成")
                 break
                 
-            logger.info(f"处理主题: '{topic}'")
+            logger.info(f"处理主题: '{topic}' ({topic_idx+1}/{len(topics)})")
             
             try:
+                # 计算剩余可生成的问题数量
+                remaining_questions = max_total_questions - len(all_questions) if max_total_questions else None
+                
+                # 计算当前主题应生成的问题数量
+                current_topic_main_questions = questions_per_main_topic
+                if remaining_questions is not None:
+                    current_topic_main_questions = min(questions_per_main_topic, remaining_questions)
+                    if current_topic_main_questions <= 0:
+                        logger.info(f"已达到最大问题数量，跳过主题 '{topic}'")
+                        break
+                
+                # Generate questions for the main topic
+                logger.info(f"为主题 '{topic}' 生成 {current_topic_main_questions} 个问题")
+                start_time = time.time()
+                topic_questions = self.generate_questions_for_topic(
+                    topic, current_topic_main_questions, language
+                )
+                logger.info(f"成功为主题 '{topic}' 生成 {len(topic_questions)} 个问题，用时 {time.time() - start_time:.2f}秒")
+                all_questions.extend(topic_questions)
+                
+                # 再次检查是否已达到最大总问题数量
+                if max_total_questions and len(all_questions) >= max_total_questions:
+                    logger.info(f"已达到最大问题数量 {max_total_questions}，停止生成子主题")
+                    break
+                
                 # First, generate subtopics
                 logger.info(f"为主题 '{topic}' 生成子主题")
                 start_time = time.time()
@@ -124,72 +161,46 @@ class QuestionGenerator:
                 logger.info(f"成功生成 {len(subtopics)} 个子主题，用时 {time.time() - start_time:.2f}秒")
                 logger.info(f"子主题列表: {subtopics}")
                 
-                # 计算还需要多少问题才能达到目标数量
-                remaining_questions = num_questions - len(all_questions) if num_questions else None
-                
-                # Generate questions for the main topic
-                logger.info(f"为主题 '{topic}' 生成问题")
-                start_time = time.time()
-                # 如果设置了总数量限制，调整当前主题的问题数量
-                current_topic_questions = min(questions_per_topic, remaining_questions) if remaining_questions else questions_per_topic
-                if current_topic_questions <= 0:
-                    logger.info(f"已达到目标问题数量，跳过主题 '{topic}'")
-                    break
-                    
-                topic_questions = self.generate_questions_for_topic(
-                    topic, current_topic_questions, language
-                )
-                logger.info(f"成功为主题 '{topic}' 生成 {len(topic_questions)} 个问题，用时 {time.time() - start_time:.2f}秒")
-                all_questions.extend(topic_questions)
-                
-                # 再次检查是否已达到目标问题数量
-                if num_questions and len(all_questions) >= num_questions:
-                    logger.info(f"已达到目标问题数量 {num_questions}，停止生成子主题问题")
-                    break
-                
-                # 更新剩余问题数量
-                remaining_questions = num_questions - len(all_questions) if num_questions else None
-                if remaining_questions and remaining_questions <= 0:
-                    break
-                
                 # Generate questions for each subtopic
-                for subtopic in subtopics:
-                    # 检查是否已达到目标问题数量
-                    if num_questions and len(all_questions) >= num_questions:
-                        logger.info(f"已达到目标问题数量 {num_questions}，停止生成")
+                for subtopic_idx, subtopic in enumerate(subtopics):
+                    # 计算剩余可生成的问题数量
+                    remaining_questions = max_total_questions - len(all_questions) if max_total_questions else None
+                    
+                    # 如果已达到最大问题数量，退出子主题循环
+                    if remaining_questions is not None and remaining_questions <= 0:
+                        logger.info(f"已达到最大问题数量，停止生成子主题问题")
                         break
-                        
-                    # 更新剩余问题数量
-                    remaining_questions = num_questions - len(all_questions) if num_questions else None
-                    if remaining_questions and remaining_questions <= 0:
-                        break
-                        
-                    logger.info(f"为子主题 '{subtopic}' 生成问题")
+                    
+                    # 计算当前子主题应生成的问题数量
+                    current_subtopic_questions = questions_per_subtopic
+                    if remaining_questions is not None:
+                        current_subtopic_questions = min(questions_per_subtopic, remaining_questions)
+                        if current_subtopic_questions <= 0:
+                            logger.info(f"已达到最大问题数量，跳过子主题 '{subtopic}'")
+                            continue
+                    
+                    logger.info(f"为子主题 '{subtopic}' ({subtopic_idx+1}/{len(subtopics)}) 生成 {current_subtopic_questions} 个问题")
                     start_time = time.time()
                     
-                    # 调整子主题的问题数量
-                    subtopic_questions_count = questions_per_topic // subtopics_per_topic
-                    if remaining_questions:
-                        subtopic_questions_count = min(subtopic_questions_count, remaining_questions)
-                    
-                    if subtopic_questions_count <= 0:
-                        logger.info(f"已达到目标问题数量，跳过子主题 '{subtopic}'")
-                        continue
-                        
                     subtopic_questions = self.generate_questions_for_topic(
                         f"{topic} - {subtopic}", 
-                        subtopic_questions_count,
+                        current_subtopic_questions,
                         language
                     )
                     logger.info(f"成功为子主题 '{subtopic}' 生成 {len(subtopic_questions)} 个问题，用时 {time.time() - start_time:.2f}秒")
                     all_questions.extend(subtopic_questions)
+                    
+                    # 检查是否已达到最大总问题数量
+                    if max_total_questions and len(all_questions) >= max_total_questions:
+                        logger.info(f"已达到最大问题数量 {max_total_questions}，停止生成更多子主题问题")
+                        break
             except Exception as e:
                 logger.error(f"处理主题 '{topic}' 时出错: {str(e)}", exc_info=True)
         
-        # Limit to requested number if specified
-        if num_questions and len(all_questions) > num_questions:
-            logger.info(f"限制问题数量从 {len(all_questions)} 到 {num_questions}")
-            all_questions = all_questions[:num_questions]
+        # 确保不超过最大总问题数量
+        if max_total_questions and len(all_questions) > max_total_questions:
+            logger.info(f"限制问题数量从 {len(all_questions)} 到 {max_total_questions}")
+            all_questions = all_questions[:max_total_questions]
         
         logger.info(f"问题生成完成，总共 {len(all_questions)} 个问题")
         return all_questions

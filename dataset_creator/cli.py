@@ -88,18 +88,21 @@ def create_task(
 @app.command()
 def generate_questions(
     topics: str = typer.Option(..., help="Comma-separated list of topics"),
-    num_questions: int = typer.Option(30, help="Number of questions to generate"),
+    num_questions: int = typer.Option(30, help="Number of questions to generate (deprecated, use max_total_questions)"),
     model: str = typer.Option("gpt-4", help="Model to use for generation"),
     provider: str = typer.Option("openai", help="Provider of the model (openai, siliconflow)"),
     api_key: Optional[str] = typer.Option(None, help="API key for the provider"),
     api_url: Optional[str] = typer.Option(None, help="API URL for the provider (for SiliconFlow)"),
     output_file: str = typer.Option("questions.json", help="File to save questions to"),
-    language: str = typer.Option("english", help="Language for questions (english or chinese)")
+    language: str = typer.Option("english", help="Language for questions (english or chinese)"),
+    subtopics_per_topic: int = typer.Option(3, help="Number of subtopics to generate per topic"),
+    questions_per_subtopic: int = typer.Option(3, help="Number of questions to generate per subtopic"),
+    max_total_questions: Optional[int] = typer.Option(None, help="Maximum total number of questions to generate")
 ):
     """Generate questions from topics."""
     # Parse topics
     topic_list = [t.strip() for t in topics.split(",")]
-    console.print(f"Generating {num_questions} questions for topics: [bold]{', '.join(topic_list)}[/bold]")
+    console.print(f"Generating questions for topics: [bold]{', '.join(topic_list)}[/bold]")
     console.print(f"Using model: [bold]{model}[/bold] from provider: [bold]{provider}[/bold]")
     console.print(f"Language: [bold]{language}[/bold]")
     
@@ -127,7 +130,10 @@ def generate_questions(
     from dataset_creator.data_gen.question_generator import QuestionGeneratorConfig
     config = QuestionGeneratorConfig(
         temperature=0.7,
-        language=lang
+        language=lang,
+        questions_per_topic=num_questions // len(topic_list) if num_questions else 10,
+        questions_per_subtopic=questions_per_subtopic,
+        max_total_questions=max_total_questions if max_total_questions is not None else num_questions
     )
     
     if api_url and provider == "siliconflow":
@@ -144,7 +150,10 @@ def generate_questions(
     # Generate questions
     questions = question_gen.generate_from_topics(
         topics=topic_list,
-        num_questions=num_questions
+        num_questions=num_questions,
+        subtopics_per_topic=subtopics_per_topic,
+        questions_per_subtopic=questions_per_subtopic,
+        max_total_questions=max_total_questions
     )
     
     # Save questions to file
